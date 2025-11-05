@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import subprocess
+
+content = """units metal
+atom_style atomic
+atom_modify map yes
+read_data tests/validation/lammps_identity_atoms.data
+pair_style eam
+pair_coeff * * /home/eng/essswb/lammps/lammps-22Jul2025/potentials/Cu_u3.eam
+neighbor 2.0 bin
+neigh_modify delay 0 every 1 check yes
+plugin load /home/eng/essswb/lammps-precon-opt-fix/build/preconlbfgsplugin.so
+fix opt all precon_lbfgs 0.01 precon none memory 100 maxstep 0.01 c1 0.001 linesearch_debug 1
+thermo 1
+thermo_style custom step pe fmax fnorm
+minimize 0.0 0.01 5 100
+unfix opt
+"""
+
+with open('tests/linesearch_debug/debug.lam', 'w') as f: f.write(content)
+
+result = subprocess.run("module purge && module load GCC/13.2.0 Eigen && /home/eng/essswb/lammps/lammps-22Jul2025/build/lmp -in tests/linesearch_debug/debug.lam",
+                      shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                      executable='/bin/bash', timeout=60)
+
+print(result.stdout)
+print(result.stderr)

@@ -1,0 +1,28 @@
+# Line search debug test: test_c1_0.1_maxstep_0.005_identity
+# Parameters: c1=0.1, maxstep=0.005, precon=identity
+
+units metal
+atom_style atomic
+atom_modify map yes
+
+# Read vacancy system
+read_data tests/validation/lammps_identity_atoms.data
+
+pair_style eam
+pair_coeff * * /home/eng/essswb/lammps/lammps-22Jul2025/potentials/Cu_u3.eam
+
+neighbor 2.0 bin
+neigh_modify delay 0 every 1 check yes
+
+plugin load /home/eng/essswb/lammps-precon-opt-fix/build/preconlbfgsplugin.so
+
+# PreconLBFGS with debug enabled
+fix opt all precon_lbfgs 0.01 precon none \
+    memory 100 maxstep 0.005 c1 0.1 linesearch_debug 1
+
+thermo 1
+thermo_style custom step pe fmax fnorm
+
+minimize 0.0 0.01 20 1000
+
+unfix opt

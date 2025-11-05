@@ -1,0 +1,41 @@
+# Test PreconLBFGS with identity preconditioner (baseline)
+# Compressed Cu FCC structure
+
+units metal
+atom_style atomic
+
+# Enable atom map (required for preconditioner)
+atom_modify map yes
+
+# Create compressed FCC Cu lattice
+lattice fcc 3.615
+region box block 0 3 0 3 0 3
+create_box 1 box
+create_atoms 1 box
+mass 1 63.546
+
+# Compress lattice by 0.5%
+change_box all x scale 0.995 y scale 0.995 z scale 0.995 remap
+
+# EAM potential for Cu
+pair_style eam
+pair_coeff * * /home/eng/essswb/lammps/lammps-22Jul2025/potentials/Cu_u3.eam
+
+# Neighbor settings
+neighbor 2.0 bin
+neigh_modify delay 0 every 1 check yes
+
+# Load plugin
+plugin load /home/eng/essswb/lammps-precon-opt-fix/build/preconlbfgsplugin.so
+
+# Use PreconLBFGS with identity preconditioner
+fix opt all precon_lbfgs 0.01 precon none memory 50 maxstep 0.04
+
+thermo 1
+thermo_style custom step pe fmax fnorm
+
+# Minimize
+minimize 0.0 0.01 100 1000
+
+# Cleanup
+unfix opt

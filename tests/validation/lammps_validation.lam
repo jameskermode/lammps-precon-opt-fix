@@ -1,0 +1,41 @@
+# LAMMPS PreconLBFGS validation test
+# Matches ASE reference optimization for direct comparison
+
+units metal
+atom_style atomic
+
+# Enable atom map
+atom_modify map yes
+
+# Read atomic configuration from data file (generated from ASE)
+# This ensures identical starting positions
+read_data tests/validation/atoms.data
+
+# EAM potential (same as ASE)
+pair_style eam
+pair_coeff * * /home/eng/essswb/lammps/lammps-22Jul2025/potentials/Cu_u3.eam
+
+# Neighbor settings
+neighbor 2.0 bin
+neigh_modify delay 0 every 1 check yes
+
+# Load plugin
+plugin load /home/eng/essswb/lammps-precon-opt-fix/build/preconlbfgsplugin.so
+
+# Dump trajectory for validation
+dump validation all custom 1 tests/validation/lammps_trajectory.dump id type x y z fx fy fz
+
+# Use PreconLBFGS with same parameters as ASE
+# memory=100, use_armijo=True (default), c1=0.23, mu=-1 (auto), A=3.0, c_stab=0.1
+fix opt all precon_lbfgs 0.01 precon exp r_cut -1.0 mu -1.0 A 3.0 c_stab 0.1 memory 100 maxstep 0.04 c1 0.23
+
+# Detailed thermo output
+thermo 1
+thermo_style custom step pe fmax fnorm
+
+# Run minimization (max 20 steps to match ASE)
+minimize 0.0 0.01 20 1000
+
+# Cleanup
+undump validation
+unfix opt

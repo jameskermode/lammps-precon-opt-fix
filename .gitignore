@@ -1,0 +1,59 @@
+# Build directories
+build/
+build-*/
+.venv/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!cmake/*.cmake
+!CMakeLists.txt
+
+# Compiled files
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# Log files
+*.log
+log.lammps
+
+# Test output
+tests/linesearch_debug/*.log
+tests/results/*.log
+tests/validation/*.log
+
+# Temporary working notes (keep only README.md)
+IMPLEMENTATION_PLAN.md
+PHASE*.md
+NEIGHLIST_UPDATE.md
+TESTING_*.md
+VALIDATION_*.md
+CONVERGENCE_*.md
+LINESEARCH_*.md
+LINE_SEARCH_*.md
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
