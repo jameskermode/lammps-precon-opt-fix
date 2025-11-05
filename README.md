@@ -1,5 +1,7 @@
 # LAMMPS Preconditioned LBFGS Plugin
 
+[![CI](https://github.com/jameskermode/lammps-precon-opt-fix/workflows/CI/badge.svg)](https://github.com/jameskermode/lammps-precon-opt-fix/actions)
+
 A high-performance LAMMPS plugin implementing the Preconditioned L-BFGS optimizer from ASE (Atomic Simulation Environment), based on the algorithm by Makri, Ortner & Kermode (J. Chem. Phys. 144, 164109, 2016).
 
 ## Features

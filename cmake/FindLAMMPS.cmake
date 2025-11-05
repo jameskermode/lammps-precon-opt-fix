@@ -10,6 +10,8 @@
 find_path(LAMMPS_INCLUDE_DIR
     NAMES lammps.h
     PATHS
+        ${LAMMPS_SOURCE_DIR}
+        $ENV{LAMMPS_SOURCE_DIR}
         $ENV{LAMMPS_DIR}/src
         ${LAMMPS_DIR}/src
         ~/lammps/lammps-22Jul2025/src

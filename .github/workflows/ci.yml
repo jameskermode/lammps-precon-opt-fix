@@ -1,0 +1,214 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            libeigen3-dev \
+            libopenmpi-dev \
+            openmpi-bin \
+            libfftw3-dev \
+            libjpeg-dev \
+            libpng-dev \
+            zlib1g-dev
+
+      - name: Get LAMMPS stable branch commit hash
+        run: |
+          LAMMPS_VERSION=$(git ls-remote https://github.com/lammps/lammps.git refs/heads/stable | awk '{print $1}')
+          echo "LAMMPS_VERSION=$LAMMPS_VERSION" >> $GITHUB_ENV
+          echo "LAMMPS commit hash: $LAMMPS_VERSION"
+
+      - name: Cache LAMMPS build
+        id: lammps-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            lammps/build
+            lammps/src
+          key: ${{ runner.os }}-lammps-${{ env.LAMMPS_VERSION }}-precon
+
+      - name: Clone and build LAMMPS (if cache miss)
+        if: steps.lammps-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone -b stable --depth=1 https://github.com/lammps/lammps.git
+          cd lammps
+          mkdir -p build
+          cd build
+          cmake ../cmake \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_MPI=yes \
+            -D BUILD_OMP=yes \
+            -D PKG_EXTRA-PAIR=yes \
+            -D PKG_MANYBODY=yes \
+            -D PKG_MOLECULE=yes
+          cmake --build . -j $(nproc)
+          cd ../..
+
+      - name: Verify LAMMPS build
+        run: |
+          ls -lh lammps/build/lmp
+          ldd lammps/build/lmp | head -10
+
+      - name: Build PreconLBFGS plugin
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D BUILD_TESTS=ON \
+            -D BUILD_PLUGIN=ON \
+            -D LAMMPS_SOURCE_DIR=${GITHUB_WORKSPACE}/lammps/src
+          cmake --build . -j $(nproc)
+
+      - name: Verify plugin build
+        run: |
+          ls -lh build/preconlbfgsplugin.so
+          ls -lh build/tests/precon_tests || echo "Unit tests not built"
+
+      - name: Run unit tests
+        run: |
+          cd build
+          if [ -f tests/precon_tests ]; then
+            echo "Running unit tests..."
+            ./tests/precon_tests --reporter compact --success
+          else
+            echo "Unit tests binary not found, skipping..."
+          fi
+
+      - name: Run integration tests - Identity preconditioner
+        run: |
+          cd tests/lammps
+          ${GITHUB_WORKSPACE}/lammps/build/lmp -in test_identity.lam > test_identity.log 2>&1
+
+          # Check that optimization completed successfully
+          if grep -q "Loop time" test_identity.log; then
+            echo "✓ Identity preconditioner test passed"
+          else
+            echo "✗ Identity preconditioner test failed"
+            cat test_identity.log
+            exit 1
+          fi
+
+      - name: Run integration tests - Exp preconditioner
+        run: |
+          cd tests/lammps
+          ${GITHUB_WORKSPACE}/lammps/build/lmp -in test_precon.lam > test_precon.log 2>&1
+
+          # Check that optimization completed and mu was estimated
+          if grep -q "estimate_mu" test_precon.log && grep -q "Loop time" test_precon.log; then
+            echo "✓ Exp preconditioner test passed"
+            grep "estimate_mu" test_precon.log
+            grep "Preconditioner built" test_precon.log
+          else
+            echo "✗ Exp preconditioner test failed"
+            cat test_precon.log
+            exit 1
+          fi
+
+      - name: Run integration tests - Auto mu estimation
+        run: |
+          cd tests/lammps
+          ${GITHUB_WORKSPACE}/lammps/build/lmp -in test_auto_mu.lam > test_auto_mu.log 2>&1
+
+          # Check that mu estimation worked
+          if grep -q "estimate_mu() raw mu" test_auto_mu.log; then
+            echo "✓ Auto mu estimation test passed"
+            grep "estimate_mu" test_auto_mu.log
+          else
+            echo "✗ Auto mu estimation test failed"
+            cat test_auto_mu.log
+            exit 1
+          fi
+
+      - name: Run integration tests - Fixed atoms
+        run: |
+          cd tests/lammps
+          ${GITHUB_WORKSPACE}/lammps/build/lmp -in test_fixed.lam > test_fixed.log 2>&1
+
+          # Check that optimization with fixed atoms completed
+          if grep -q "Loop time" test_fixed.log; then
+            echo "✓ Fixed atoms test passed"
+          else
+            echo "✗ Fixed atoms test failed"
+            cat test_fixed.log
+            exit 1
+          fi
+
+      - name: Run MPI tests - 2 ranks
+        run: |
+          cd tests/lammps
+          mpirun -np 2 ${GITHUB_WORKSPACE}/lammps/build/lmp -in test_precon.lam > test_mpi_np2.log 2>&1
+
+          # Check that MPI run completed successfully
+          if grep -q "Loop time" test_mpi_np2.log; then
+            echo "✓ MPI test (2 ranks) passed"
+          else
+            echo "✗ MPI test (2 ranks) failed"
+            cat test_mpi_np2.log
+            exit 1
+          fi
+
+      - name: Run MPI tests - 4 ranks
+        run: |
+          cd tests/lammps
+          mpirun -np 4 ${GITHUB_WORKSPACE}/lammps/build/lmp -in test_precon.lam > test_mpi_np4.log 2>&1
+
+          # Check that MPI run completed successfully
+          if grep -q "Loop time" test_mpi_np4.log; then
+            echo "✓ MPI test (4 ranks) passed"
+          else
+            echo "✗ MPI test (4 ranks) failed"
+            cat test_mpi_np4.log
+            exit 1
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: tests/lammps/*.log
+
+      - name: Print test summary
+        if: always()
+        run: |
+          echo "================================"
+          echo "Test Summary"
+          echo "================================"
+          echo ""
+          echo "Unit Tests:"
+          if [ -f build/tests/precon_tests ]; then
+            echo "  ✓ Compiled successfully"
+          else
+            echo "  ✗ Not built"
+          fi
+          echo ""
+          echo "Integration Tests:"
+          for test in identity precon auto_mu fixed mpi_np2 mpi_np4; do
+            if [ -f tests/lammps/test_${test}.log ]; then
+              if grep -q "Loop time" tests/lammps/test_${test}.log 2>/dev/null; then
+                echo "  ✓ test_${test}"
+              else
+                echo "  ✗ test_${test} (failed)"
+              fi
+            else
+              echo "  - test_${test} (not run)"
+            fi
+          done
