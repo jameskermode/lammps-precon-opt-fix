@@ -43,10 +43,25 @@ jobs:
             lammps/build
             lammps/src
           key: ${{ runner.os }}-lammps-${{ env.LAMMPS_VERSION }}-precon
+          restore-keys: |
+            ${{ runner.os }}-lammps-${{ env.LAMMPS_VERSION }}-
+            ${{ runner.os }}-lammps-
+
+      - name: Check cache status
+        run: |
+          echo "Cache hit: ${{ steps.lammps-cache.outputs.cache-hit }}"
+          echo "Cache key: ${{ runner.os }}-lammps-${{ env.LAMMPS_VERSION }}-precon"
+          if [ -d "lammps/build" ]; then
+            echo "LAMMPS build directory exists (from cache or previous run)"
+            ls -lh lammps/build/ | head -5
+          else
+            echo "LAMMPS build directory does not exist, will build from scratch"
+          fi
 
       - name: Clone and build LAMMPS (if cache miss)
         if: steps.lammps-cache.outputs.cache-hit != 'true'
         run: |
+          echo "Building LAMMPS from scratch (cache miss)"
           git clone -b stable --depth=1 https://github.com/lammps/lammps.git
           cd lammps
           mkdir -p build
