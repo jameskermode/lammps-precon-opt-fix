@@ -55,7 +55,7 @@ void PreconExp::make_precon(LAMMPS *lmp, int groupbit, const std::vector<int> &f
 
   // Estimate mu if not set
   if (mu < 0.0) {
-    mu = estimate_mu(lmp, groupbit);
+    mu = estimate_mu(lmp, groupbit, list);
   }
 
   // Extract neighbors from LAMMPS
@@ -77,7 +77,7 @@ void PreconExp::make_precon(LAMMPS *lmp, int groupbit, const std::vector<int> &f
 
 /* ---------------------------------------------------------------------- */
 
-double PreconExp::estimate_mu(LAMMPS *lmp, int groupbit)
+double PreconExp::estimate_mu(LAMMPS *lmp, int groupbit, NeighList *list)
 {
   /* Estimate optimal mu parameter using sine-based perturbation
    *
@@ -311,12 +311,19 @@ double PreconExp::estimate_mu(LAMMPS *lmp, int groupbit)
   // Compute LHS = (dE_p_plus_v - dE_p) · v
   double LHS = 0.0;
   for (int i = 0; i < natoms_total * 3; i++) {
-    LHS += (dE_p_plus_v[i] - dE_p[i]) * v_all[i];
+    double dE_diff = dE_p_plus_v[i] - dE_p[i];
+    LHS += dE_diff * v_all[i];
   }
 
   // Build preconditioner with mu=1 to compute RHS
   double mu_save = mu;
   mu = 1.0;
+
+  // CRITICAL: Extract neighbors first (if not already done)
+  // This is required for assemble_matrix to create off-diagonal elements
+  if (neighbors_.empty()) {
+    extract_neighbors_from_lammps(lmp, groupbit, list);
+  }
 
   // Assemble matrix with mu=1 (need to pass empty fixed_tags)
   std::vector<int> no_fixed;
@@ -333,6 +340,10 @@ double PreconExp::estimate_mu(LAMMPS *lmp, int groupbit)
 
   // Solve for mu
   double mu_est = LHS / RHS;
+
+  if (comm->me == 0) {
+    printf("  estimate_mu() raw mu = %.10f\n", mu_est);
+  }
 
   // Clamp to minimum value of 1.0
   if (mu_est < 1.0) {

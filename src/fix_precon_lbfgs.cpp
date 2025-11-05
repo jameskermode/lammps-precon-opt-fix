@@ -863,6 +863,10 @@ double FixPreconLBFGS::compute_trial_energy()
   // For trial positions during line search, we must trigger force recomputation
   // Otherwise energy will be stale/cached value
 
+  // CRITICAL: Forward communicate positions to ghost atoms
+  // Ghost atoms need updated positions for pair force calculation
+  comm->forward_comm();
+
   // Clear forces
   double **f = atom->f;
   int nall = atom->nlocal + atom->nghost;

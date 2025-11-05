@@ -27,7 +27,7 @@ class PreconExp {
                    class NeighList *list);
 
   // Estimate mu parameter automatically
-  double estimate_mu(LAMMPS *lmp, int groupbit);
+  double estimate_mu(LAMMPS *lmp, int groupbit, class NeighList *list);
 
   // Estimate nearest neighbor distance
   double estimate_r_NN(LAMMPS *lmp, int groupbit, class NeighList *list);

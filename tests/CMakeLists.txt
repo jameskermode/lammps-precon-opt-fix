@@ -22,6 +22,9 @@ add_executable(precon_tests
     test_precon_lbfgs_integration.cpp
     test_lammps_neighbor.cpp
     test_sparse_solver.cpp
+    test_precon_matrix_direct.cpp
+    # Include implementation files needed by tests
+    ../src/precon_exp.cpp
 )
 
 target_include_directories(precon_tests PRIVATE
@@ -36,6 +39,11 @@ target_link_libraries(precon_tests PRIVATE
     Catch2::Catch2WithMain
     Eigen3::Eigen
     ${MPI_CXX_LIBRARIES}
+    /home/eng/essswb/lammps/lammps-22Jul2025/build/liblammps.a
+    gomp
+    jpeg
+    png
+    z
 )
 
 # Add LAMMPS include directories

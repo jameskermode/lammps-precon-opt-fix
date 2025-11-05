@@ -15,6 +15,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Find dependencies
 find_package(Eigen3 REQUIRED)
+find_package(MPI REQUIRED)
 if(BUILD_PLUGIN)
     find_package(LAMMPS REQUIRED)
 endif()
@@ -30,11 +31,13 @@ if(BUILD_PLUGIN)
     target_include_directories(preconlbfgsplugin PRIVATE
         ${LAMMPS_INCLUDE_DIRS}
         ${EIGEN3_INCLUDE_DIRS}
+        ${MPI_CXX_INCLUDE_DIRS}
     )
 
     target_link_libraries(preconlbfgsplugin PRIVATE
         ${LAMMPS_LIBRARIES}
         Eigen3::Eigen
+        ${MPI_CXX_LIBRARIES}
     )
 
     set_target_properties(preconlbfgsplugin PROPERTIES
