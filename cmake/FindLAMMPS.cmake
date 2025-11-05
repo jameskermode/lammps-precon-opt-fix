@@ -14,7 +14,6 @@ find_path(LAMMPS_INCLUDE_DIR
         $ENV{LAMMPS_SOURCE_DIR}
         $ENV{LAMMPS_DIR}/src
         ${LAMMPS_DIR}/src
-        ~/lammps/lammps-22Jul2025/src
         /usr/local/include/lammps
         /usr/include/lammps
     PATH_SUFFIXES LAMMPS
@@ -25,7 +24,6 @@ find_library(LAMMPS_LIBRARY
     PATHS
         $ENV{LAMMPS_DIR}/src
         ${LAMMPS_DIR}/src
-        ~/lammps/lammps-22Jul2025/src
         /usr/local/lib
         /usr/lib
 )
