@@ -39,7 +39,7 @@ target_link_libraries(precon_tests PRIVATE
     Catch2::Catch2WithMain
     Eigen3::Eigen
     ${MPI_CXX_LIBRARIES}
-    /home/eng/essswb/lammps/lammps-22Jul2025/build/liblammps.a
+    ${LAMMPS_LIBRARIES}
     gomp
     jpeg
     png
