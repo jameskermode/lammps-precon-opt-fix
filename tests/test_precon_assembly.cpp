@@ -126,7 +126,8 @@ TEST_CASE("Preconditioner assembly - bulk Al", "[precon][assembly]") {
 
 TEST_CASE("Preconditioner assembly - rattled structure", "[precon][assembly]") {
     auto atoms_perfect = create_bulk_Al_2x2x2();
-    auto atoms_rattled = create_rattled(atoms_perfect, 0.1, 7);
+    // Use smaller displacement to ensure max < 1.0 Å
+    auto atoms_rattled = create_rattled(atoms_perfect, 0.05, 7);
 
     SECTION("Rattled structure still produces SPD matrix") {
         // PreconExp precon(/*r_cut=*/4.0, /*mu=*/1.0, /*A=*/3.0);
@@ -139,12 +140,26 @@ TEST_CASE("Preconditioner assembly - rattled structure", "[precon][assembly]") {
         WARN("Test skipped: PreconExp not yet implemented");
         REQUIRE(atoms_rattled.natoms == 32);
 
-        // Verify rattling worked
+        // Verify rattling worked (use minimum image convention for PBC)
         double max_displacement = 0.0;
         for (int i = 0; i < atoms_perfect.natoms; i++) {
             double dx = atoms_rattled.positions[i][0] - atoms_perfect.positions[i][0];
             double dy = atoms_rattled.positions[i][1] - atoms_perfect.positions[i][1];
             double dz = atoms_rattled.positions[i][2] - atoms_perfect.positions[i][2];
+
+            // Apply minimum image convention for periodic boundaries
+            for (int d = 0; d < 3; d++) {
+                double delta = (d == 0) ? dx : (d == 1) ? dy : dz;
+                if (atoms_rattled.pbc[d]) {
+                    double L = atoms_rattled.box_hi[d] - atoms_rattled.box_lo[d];
+                    if (delta > L/2) delta -= L;
+                    if (delta < -L/2) delta += L;
+                }
+                if (d == 0) dx = delta;
+                else if (d == 1) dy = delta;
+                else dz = delta;
+            }
+
             double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
             max_displacement = std::max(max_displacement, dist);
         }

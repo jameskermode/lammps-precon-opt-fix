@@ -170,16 +170,17 @@ TEST_CASE("Preconditioner matrix properties", "[sparse][preconditioner]") {
         std::vector<Eigen::Triplet<double>> triplets;
 
         // Simple preconditioner-like matrix
+        // For SPD: diagonal must dominate (Gershgorin circle theorem)
         for (int i = 0; i < n; i++) {
-            // Diagonal with stabilization
-            triplets.emplace_back(i, i, mu * c_stab);
+            // Diagonal: must be > sum of off-diagonals for SPD
+            triplets.emplace_back(i, i, mu * (c_stab + 1.0));
 
-            // Off-diagonal coupling (negative)
+            // Off-diagonal coupling (negative, small enough for SPD)
             if (i > 0) {
-                triplets.emplace_back(i, i-1, -mu * 0.5);
+                triplets.emplace_back(i, i-1, -mu * 0.1);
             }
             if (i < n-1) {
-                triplets.emplace_back(i, i+1, -mu * 0.5);
+                triplets.emplace_back(i, i+1, -mu * 0.1);
             }
         }
 
