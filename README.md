@@ -56,13 +56,22 @@ and [`uv`](https://docs.astral.sh/uv/).
 
    ```bash
    uv sync                                          # ASE + the other deps
-   uv pip install ./lammps-symmetrix/lammps/python  # the LAMMPS Python module
+   LAMMPS_VERSION_FILE=$PWD/lammps-symmetrix/lammps/src/version.h \
+       uv pip install ./lammps-symmetrix/lammps/python   # LAMMPS Python module
    ```
 
-4. **(MACE engine only)** convert the MACE foundation model to Symmetrix JSON:
+   The `lammps` module loads `liblammps.so` at run time, so put the LAMMPS
+   build directory on `LD_LIBRARY_PATH` before running `lmp` or the test suite:
 
    ```bash
-   python scripts/convert_model.py
+   export LD_LIBRARY_PATH=$PWD/lammps-symmetrix/lammps/build:$LD_LIBRARY_PATH
+   ```
+
+4. **(MACE engine only)** convert a MACE foundation model to Symmetrix JSON —
+   pass the path to your downloaded `.model` file:
+
+   ```bash
+   python scripts/convert_model.py /path/to/MACE-matpes-pbe-omat-ft.model
    ```
 
 ### HPC convenience

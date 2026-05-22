@@ -26,9 +26,13 @@ VENV_LIB = REPO_ROOT / ".venv" / "lib"
 
 
 def _lmp_binary() -> Path:
-    builds = sorted((REPO_ROOT / "lammps-symmetrix" / "lammps").glob("build-*/lmp"))
+    """Locate the LAMMPS `lmp` executable in a build directory under lammps/."""
+    lammps_dir = REPO_ROOT / "lammps-symmetrix" / "lammps"
+    # match any build dir name: `build`, `build-ci`, `build-HSW-none`, ...
+    builds = sorted(lammps_dir.glob("build*/lmp"))
     if not builds:
-        raise FileNotFoundError("LAMMPS 'lmp' binary not found")
+        raise FileNotFoundError(
+            f"LAMMPS 'lmp' binary not found under {lammps_dir}/build*/")
     return builds[0]
 
 
