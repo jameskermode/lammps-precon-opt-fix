@@ -133,6 +133,16 @@ clean machine — caching the LAMMPS build keyed by its commit — and runs the
 classical-EAM smoke tests (`tests/test_ci_smoke.py`); the Symmetrix/MACE tests
 self-skip there (they need the foundation model).
 
+## Convergence
+
+![fmax vs. number of force calls — ASE vs the C++ plugin](docs/convergence.png)
+
+`fmax` against the number of force evaluations for ASE's `PreconLBFGS` + `Exp`
+and the C++ plugin's `min_style precon/lbfgs`, on the four Packwood test
+structures. Both reach the 10⁻³ eV/Å tolerance in a comparable number of force
+calls — the curves differ only because the two optimisers use different line
+searches. Regenerate with `python scripts/plot_convergence.py`.
+
 ## Layout
 
 | Path | Contents |

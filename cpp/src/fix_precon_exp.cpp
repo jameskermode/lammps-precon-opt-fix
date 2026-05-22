@@ -34,6 +34,9 @@ FixPreconExp::FixPreconExp(LAMMPS *lmp, int narg, char **arg)
         error->all(FLERR, "fix precon/exp: dump needs a prefix");
       dump_prefix_ = arg[iarg + 1];
       iarg += 2;
+    } else if (strcmp(arg[iarg], "trace") == 0) {
+      trace_ = true;   // emit a per-iteration PRECON_TRACE line
+      iarg += 1;
     } else {
       error->all(FLERR, "fix precon/exp: unknown keyword");
     }

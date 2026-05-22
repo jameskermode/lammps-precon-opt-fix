@@ -8,7 +8,7 @@
    computation — so the solve (Jacobi-preconditioned CG) domain-decomposes
    naturally. No external linear-algebra dependency.
 
-     fix ID group precon/exp [r_cut <value>] [dump <prefix>]
+     fix ID group precon/exp [r_cut <value>] [dump <prefix>] [trace]
 */
 #ifndef LMP_FIX_PRECON_EXP_H
 #define LMP_FIX_PRECON_EXP_H
@@ -47,6 +47,7 @@ class FixPreconExp : public Fix {
   void set_mu_c(double v) { mu_c_ = v; }
   double user_r_cut() const { return user_r_cut_; }
   const std::string &dump_prefix() const { return dump_prefix_; }
+  bool trace() const { return trace_; }   // emit per-iteration PRECON_TRACE
   int last_cg_iterations() const { return cg_iterations_; }
 
  private:
@@ -57,6 +58,7 @@ class FixPreconExp : public Fix {
   double r_NN_ = -1.0, r_cut_ = -1.0, mu_ = 1.0, mu_c_ = 1.0;
   double user_r_cut_ = -1.0;
   std::string dump_prefix_;
+  bool trace_ = false;
   double cg_rtol_ = 1.0e-10;
   int cg_iterations_ = 0;
 

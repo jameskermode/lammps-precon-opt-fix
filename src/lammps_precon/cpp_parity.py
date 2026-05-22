@@ -55,8 +55,14 @@ def _parse_minimize_log(logfile: Path) -> dict:
     m = re.search(r"Stopping criterion\s*=\s*(.+)", text)
     if m:
         stop = m.group(1).strip()
+    # optional per-iteration convergence trace (fix precon/exp ... trace):
+    # (cumulative force evaluations, fmax) at each iterate
+    trace = [(int(neval), float(fmax))
+             for _it, neval, fmax in re.findall(
+                 r"PRECON_TRACE\s+(\d+)\s+(\d+)\s+(\S+)", text)]
     return dict(n_steps=n_steps, n_force=n_force, stop_reason=stop,
-                converged=stop in ("force tolerance", "energy tolerance"))
+                converged=stop in ("force tolerance", "energy tolerance"),
+                trace=trace)
 
 
 def run_lammps_cpp(
@@ -67,8 +73,13 @@ def run_lammps_cpp(
     maxiter: int,
     workdir: Path,
     dump_prefix: str | None = None,
+    trace: bool = False,
 ) -> dict:
-    """Run a `min_style precon/lbfgs` relaxation in LAMMPS via the C++ plugin."""
+    """Run a `min_style precon/lbfgs` relaxation in LAMMPS via the C++ plugin.
+
+    With ``trace=True`` the result dict's ``trace`` entry is a list of
+    ``(cumulative_force_evals, fmax)`` pairs, one per minimizer iteration.
+    """
     from lammps import lammps
 
     workdir = Path(workdir)
@@ -86,6 +97,8 @@ def run_lammps_cpp(
     fix_cmd = "fix pc all precon/exp"
     if dump_prefix:
         fix_cmd += f" dump {dump_prefix}"
+    if trace:
+        fix_cmd += " trace"
     commands = [
         f"plugin load {PLUGIN_SO}",
         "units metal",

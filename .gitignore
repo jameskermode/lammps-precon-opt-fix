@@ -16,6 +16,8 @@ build_lammps.log
 /artifacts/**/*.xyz
 /artifacts/**/*.json
 /artifacts/**/*.traj
+/artifacts/**/*.png
+/artifacts/**/*.pdf
 
 # C++ plugin build
 /cpp/build/
