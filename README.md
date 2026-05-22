@@ -68,10 +68,10 @@ and [`uv`](https://docs.astral.sh/uv/).
 
 ### HPC convenience
 
-On the development cluster, `bash scripts/build_lammps.sh` does all of the above
-(LAMMPS + Symmetrix + Kokkos, the `uv` environment, runtime-library bundling) using
-`foss/2023b` modules and an NFS build cache; `bash cpp/scripts/build_plugin.sh` then
-builds the plugin.
+On an HPC system with the Lmod module system, `bash scripts/build_lammps.sh` does
+all of the above (LAMMPS + Symmetrix + Kokkos, the `uv` environment,
+runtime-library bundling) using `foss/2023b` modules; `bash
+cpp/scripts/build_plugin.sh` then builds the plugin.
 
 ## Usage
 

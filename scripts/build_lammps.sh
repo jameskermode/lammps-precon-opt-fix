@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Build LAMMPS with symmetrix/MACE + MANYBODY (EAM) on SCRTP.
+# Build LAMMPS + Symmetrix (MACE) with the PLUGIN and MANYBODY (EAM) packages
+# and set up the uv Python environment.
 #
-# Adapted from ~/isg2026-amentum/scripts/build_lammps.sh (known-working recipe).
-# Difference from the original: this project is CPU-only by default — the test
-# systems are small geometry-optimisation cells, so a GPU build is unnecessary.
-# Set FORCE_CPU=0 to restore GPU auto-detection.
+# This is an HPC *convenience* script: it assumes the Lmod module system (see
+# the "Toolchain" section below). On a machine without Lmod, follow the generic
+# build in README.md instead. CPU-only by default — the test systems are small
+# geometry-optimisation cells; set FORCE_CPU=0 to auto-detect a GPU.
 #
 # Usage:
-#   bash scripts/build_lammps.sh              # build (or fetch from cache) + set up Python env
-#   bash scripts/build_lammps.sh --no-cache   # force fresh build, update shared cache
-#   bash scripts/build_lammps.sh clean        # remove local build directory
+#   bash scripts/build_lammps.sh              # build + set up the Python env
+#   bash scripts/build_lammps.sh clean        # remove the local build directory
 #   FORCE_CPU=0 bash scripts/build_lammps.sh  # auto-detect and use a GPU
 set -euo pipefail
 
@@ -21,10 +21,12 @@ FOSS_MODULE="foss/2023b"
 CMAKE_MODULE="CMake/3.27.6"
 CUDA_MODULE="CUDA/12.9.1"
 
-# Shared build cache on NFS (avoids re-compiling for each user)
-CACHE_BASE="/storage/eng/essswb/isg2026-lammps-cache"
-
-# ── Ensure module system is available ────────────────────────────────────────
+# ── Toolchain (HPC / Lmod — local setup) ─────────────────────────────────────
+# This convenience script targets an HPC environment with the Lmod module
+# system; the `module load` calls below provide GCC 13.2, OpenMPI and CMake.
+# On a machine without Lmod, remove this section and the `module` calls and
+# provide a C++20 compiler, MPI and CMake >= 3.20 by your own means — the
+# generic build in README.md does exactly that.
 if ! type module &>/dev/null; then
     for f in /etc/profile.d/*lmod*.sh /etc/profile.d/*modules*.sh; do
         if [[ -f "$f" ]]; then
@@ -35,7 +37,8 @@ if ! type module &>/dev/null; then
 fi
 
 if ! type module &>/dev/null; then
-    echo "ERROR: Lmod module system not found. Are you on an SCRTP node?"
+    echo "ERROR: Lmod 'module' command not found. This is an HPC convenience"
+    echo "       script — for a generic build follow the steps in README.md."
     exit 1
 fi
 
@@ -85,28 +88,20 @@ else
     echo "WARNING: Could not detect CPU arch, using Kokkos_ARCH_NATIVE=ON"
 fi
 
-# ── Compute arch key and set arch-specific paths ────────────────────────────
-CACHE_KEY="${KOKKOS_CPU_ARCH:-NATIVE}-${KOKKOS_GPU_ARCH:-none}"
-CACHE_DIR="$CACHE_BASE/$CACHE_KEY"
-
-# Arch-specific directories so shared filesystems work across heterogeneous nodes
-VENV_DIR="$REPO_DIR/.venv-${CACHE_KEY}"
+# ── Arch-specific paths (so a shared filesystem works across mixed nodes) ────
+ARCH_KEY="${KOKKOS_CPU_ARCH:-NATIVE}-${KOKKOS_GPU_ARCH:-none}"
+VENV_DIR="$REPO_DIR/.venv-${ARCH_KEY}"
 BASE_DIR="$REPO_DIR/lammps-symmetrix"
 LAMMPS_DIR="$BASE_DIR/lammps"
 SYMMETRIX_DIR="$BASE_DIR/symmetrix"
-BUILD_DIR="$LAMMPS_DIR/build-${CACHE_KEY}"
+BUILD_DIR="$LAMMPS_DIR/build-${ARCH_KEY}"
 
 # ── Handle arguments ─────────────────────────────────────────────────────────
-USE_CACHE=true
 if [[ "${1:-}" == "clean" ]]; then
     echo "Removing build directory: $BUILD_DIR"
     rm -rf "$BUILD_DIR"
     echo "Done. Re-run without 'clean' to rebuild."
     exit 0
-elif [[ "${1:-}" == "--no-cache" ]]; then
-    USE_CACHE=false
-    echo "Cache disabled — will force a fresh build."
-    rm -rf "$BUILD_DIR"
 fi
 
 # ── Load modules ─────────────────────────────────────────────────────────────
@@ -124,28 +119,6 @@ echo "Compiler: $(gcc --version | head -1)"
 echo "MPI:      $(mpirun --version 2>&1 | head -1)"
 echo "CMake:    $(cmake --version | head -1)"
 
-# ── Check build cache ────────────────────────────────────────────────────────
-SKIP_BUILD=false
-
-if [[ "$USE_CACHE" == true && -x "$CACHE_DIR/lmp" ]]; then
-    echo ""
-    echo "=== Using cached build ($CACHE_KEY) ==="
-    cat "$CACHE_DIR/.built-by" 2>/dev/null || true
-    mkdir -p "$BUILD_DIR"
-    cp "$CACHE_DIR/lmp" "$BUILD_DIR/"
-    find "$CACHE_DIR" -maxdepth 1 -name "*.so*" -exec cp -P {} "$BUILD_DIR/" \;
-    # Copy LAMMPS Python package + version.h from cache
-    mkdir -p "$LAMMPS_DIR/src"
-    if [[ ! -d "$LAMMPS_DIR/python" ]]; then
-        cp -r "$CACHE_DIR/python" "$LAMMPS_DIR/python"
-    fi
-    if [[ ! -f "$LAMMPS_DIR/src/version.h" && -f "$CACHE_DIR/version.h" ]]; then
-        cp "$CACHE_DIR/version.h" "$LAMMPS_DIR/src/version.h"
-    fi
-    SKIP_BUILD=true
-fi
-
-if [[ "$SKIP_BUILD" == false ]]; then
 # ── Ensure source trees are available ────────────────────────────────────────
 mkdir -p "$BASE_DIR"
 if [[ ! -d "$SYMMETRIX_DIR" ]]; then
@@ -155,19 +128,9 @@ fi
 
 echo ""
 echo "=== Downloading sources ==="
-
-# Check for a complete LAMMPS source tree (not just a cache-fetched stub)
-if [[ -d "$LAMMPS_DIR" && ! -f "$LAMMPS_DIR/CMakeLists.txt" ]]; then
-    echo "Found incomplete LAMMPS directory (from cache fetch), keeping it."
-fi
-
 if [[ ! -f "$LAMMPS_DIR/CMakeLists.txt" ]]; then
     echo "Cloning LAMMPS (release branch)..."
-    # Clone alongside any existing stub dirs (python/, src/version.h)
-    git clone -b release https://github.com/lammps/lammps "$LAMMPS_DIR.tmp"
-    # Merge: move cloned tree over, preserving any cache-fetched files
-    rsync -a "$LAMMPS_DIR.tmp/" "$LAMMPS_DIR/"
-    rm -rf "$LAMMPS_DIR.tmp"
+    git clone -b release https://github.com/lammps/lammps "$LAMMPS_DIR"
 else
     echo "LAMMPS directory already exists, skipping clone."
 fi
@@ -228,34 +191,9 @@ NPROCS="${NPROCS:-$(nproc --all 2>/dev/null || nproc 2>/dev/null || echo 8)}"
 echo "Building with $NPROCS parallel jobs..."
 cmake --build "$BUILD_DIR" -j "$NPROCS"
 
-# ── Populate build cache ────────────────────────────────────────────────────
-echo ""
-echo "=== Caching build ($CACHE_KEY) ==="
-mkdir -p "$CACHE_BASE" 2>/dev/null && chmod a+rwx "$CACHE_BASE" 2>/dev/null || true
-mkdir -p "$CACHE_DIR"
-cp "$BUILD_DIR/lmp" "$CACHE_DIR/"
-find "$BUILD_DIR" -maxdepth 1 -name "*.so*" -exec cp -P {} "$CACHE_DIR/" \;
-cp -r "$LAMMPS_DIR/python" "$CACHE_DIR/" 2>/dev/null || true
-cp "$LAMMPS_DIR/src/version.h" "$CACHE_DIR/" 2>/dev/null || true
-chmod -R a+rwX "$CACHE_DIR" 2>/dev/null || true
-cat > "$CACHE_DIR/.built-by" <<CEOF
-user=$USER
-date=$(date -Iseconds)
-lammps_commit=$(git -C "$LAMMPS_DIR" rev-parse HEAD 2>/dev/null || echo unknown)
-symmetrix_commit=$(git -C "$SYMMETRIX_DIR" rev-parse HEAD 2>/dev/null || echo unknown)
-foss_module=$FOSS_MODULE
-cmake_module=$CMAKE_MODULE
-cuda_module=$CUDA_MODULE
-cache_key=$CACHE_KEY
-CEOF
-chmod a+r "$CACHE_DIR/.built-by" 2>/dev/null || true
-echo "Cached to $CACHE_DIR"
-
-fi  # end SKIP_BUILD
-
 # ── Set up Python environment ────────────────────────────────────────────────
 echo ""
-echo "=== Setting up Python environment ($CACHE_KEY) ==="
+echo "=== Setting up Python environment ($ARCH_KEY) ==="
 
 # Install uv if not available
 if ! command -v uv &>/dev/null; then
@@ -282,30 +220,13 @@ fi
 echo "Installing LAMMPS Python interface..."
 LAMMPS_VERSION_FILE="$LAMMPS_DIR/src/version.h" uv pip install --python "$VENV_DIR/bin/python" "$LAMMPS_DIR/python"
 
-# Install symmetrix Python package (cached wheel or build from source)
-if [[ ! -d "$SYMMETRIX_DIR" ]]; then
-    echo "Cloning symmetrix (recursive)..."
-    git clone --recursive https://github.com/wcwitt/symmetrix "$SYMMETRIX_DIR"
-fi
-
-# Determine current Python ABI tag (e.g. cp312) to avoid installing
-# wheels built for a different Python version
+# Build and install the symmetrix Python package
 PY_TAG=$("$VENV_DIR/bin/python" -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
-SYMMETRIX_WHL=$(find "$CACHE_DIR" -name "symmetrix-*-${PY_TAG}-*.whl" 2>/dev/null | head -1)
-
-if [[ -n "$SYMMETRIX_WHL" ]]; then
-    echo "Installing symmetrix from cached wheel ($PY_TAG)..."
-else
-    echo "Building symmetrix wheel for $PY_TAG (this takes ~2 min)..."
-    LOCAL_WHL_DIR="$BUILD_DIR/symmetrix-wheel"
-    mkdir -p "$LOCAL_WHL_DIR"
-    CC=gcc CXX=g++ uv build --wheel "$SYMMETRIX_DIR/symmetrix" --out-dir "$LOCAL_WHL_DIR"
-    SYMMETRIX_WHL=$(find "$LOCAL_WHL_DIR" -name "symmetrix-*-${PY_TAG}-*.whl" | head -1)
-    if [[ -w "$CACHE_DIR" ]]; then
-        cp "$SYMMETRIX_WHL" "$CACHE_DIR/" 2>/dev/null && \
-            chmod a+r "$CACHE_DIR"/symmetrix-*.whl 2>/dev/null || true
-    fi
-fi
+echo "Building symmetrix wheel for $PY_TAG (this takes ~2 min)..."
+WHL_DIR="$BUILD_DIR/symmetrix-wheel"
+mkdir -p "$WHL_DIR"
+CC=gcc CXX=g++ uv build --wheel "$SYMMETRIX_DIR/symmetrix" --out-dir "$WHL_DIR"
+SYMMETRIX_WHL=$(find "$WHL_DIR" -name "symmetrix-*-${PY_TAG}-*.whl" | head -1)
 uv pip install --python "$VENV_DIR/bin/python" "$SYMMETRIX_WHL"
 
 # Install lmp binary and shared libs into the venv
@@ -357,7 +278,7 @@ ln -sfn "$(basename "$VENV_DIR")" "$REPO_DIR/.venv"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
-echo "=== Build complete ($CACHE_KEY) ==="
+echo "=== Build complete ($ARCH_KEY) ==="
 echo ""
 echo "GPU support: $([[ "$GPU_DETECTED" == true ]] && echo "YES ($KOKKOS_GPU_ARCH)" || echo "NO (CPU-only)")"
 echo ""
