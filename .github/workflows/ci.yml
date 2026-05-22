@@ -89,7 +89,12 @@ jobs:
           cmake --build cpp/build -j "$(nproc)"
 
       - name: Run EAM smoke tests
-        run: uv run pytest tests/test_ci_smoke.py -v
+        run: |
+          # allow `mpirun -np 4` on the small CI runner (the cpp_mpi helper
+          # scrubs OMPI_* env vars, so set oversubscription via the config file)
+          mkdir -p ~/.openmpi
+          echo "rmaps_base_oversubscribe = 1" > ~/.openmpi/mca-params.conf
+          uv run pytest tests/test_ci_smoke.py -v
 
       - name: Upload test logs
         if: always()
