@@ -1,0 +1,99 @@
+# CI — builds LAMMPS (with the PLUGIN package) and the Exp-preconditioner
+# plugin on a clean ubuntu-latest machine, then runs the classical-EAM smoke
+# tests. The LAMMPS build is cached, keyed by the LAMMPS `release` commit, so
+# only the first run (or a LAMMPS bump) pays the ~10 min build cost.
+#
+# The Symmetrix / MACE validation (the full 208-test suite) is not run here —
+# it needs the MACE foundation model; those tests self-skip via envcheck.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      LAMMPS_DIR: lammps-symmetrix/lammps
+      LAMMPS_BUILD: lammps-symmetrix/lammps/build-ci
+      LD_LIBRARY_PATH: ${{ github.workspace }}/lammps-symmetrix/lammps/build-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++-13 cmake libopenmpi-dev openmpi-bin
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Resolve LAMMPS release commit
+        id: lammps
+        run: |
+          HASH=$(git ls-remote https://github.com/lammps/lammps.git refs/heads/release | awk '{print $1}')
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "LAMMPS release commit: $HASH"
+
+      - name: Cache LAMMPS build
+        id: lammps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LAMMPS_DIR }}
+          key: lammps-${{ runner.os }}-${{ steps.lammps.outputs.hash }}-plugin-cxx20
+
+      - name: Build LAMMPS (PLUGIN package)
+        if: steps.lammps-cache.outputs.cache-hit != 'true'
+        run: |
+          rm -rf "$LAMMPS_DIR"
+          git clone --depth=1 -b release https://github.com/lammps/lammps.git "$LAMMPS_DIR"
+          cmake -S "$LAMMPS_DIR/cmake" -B "$LAMMPS_BUILD" \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_CXX_COMPILER=g++-13 \
+            -D CMAKE_CXX_STANDARD=20 \
+            -D BUILD_MPI=yes \
+            -D BUILD_SHARED_LIBS=yes \
+            -D PKG_PLUGIN=yes \
+            -D PKG_MANYBODY=yes
+          cmake --build "$LAMMPS_BUILD" -j "$(nproc)"
+
+      - name: Clone ASE
+        run: |
+          [ -d ase-src ] || \
+            git clone --depth=1 -b 3.28.0 https://gitlab.com/ase/ase.git ase-src
+
+      - name: Set up the Python environment
+        run: |
+          uv sync
+          uv pip install ./lammps-symmetrix/lammps/python   # LAMMPS Python module
+
+      - name: Build the plugin
+        run: |
+          cmake -S cpp -B cpp/build \
+            -D CMAKE_CXX_COMPILER=g++-13 \
+            -D CMAKE_CXX_STANDARD=20 \
+            -D LAMMPS_SOURCE_DIR=${{ github.workspace }}/lammps-symmetrix/lammps/src
+          cmake --build cpp/build -j "$(nproc)"
+
+      - name: Run EAM smoke tests
+        run: uv run pytest tests/test_ci_smoke.py -v
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: '**/*.log'
+          if-no-files-found: ignore

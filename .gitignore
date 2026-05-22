@@ -1,0 +1,33 @@
+# External source trees (cloned by scripts/build_lammps.sh and clone steps)
+/lammps-symmetrix/
+/ase-src/
+build_lammps.log
+
+# uv environments (arch-specific)
+/.venv
+/.venv-*
+
+# Large model files
+/models/*.model
+/models/*.json
+
+# Generated artifacts
+/artifacts/**/*.npz
+/artifacts/**/*.xyz
+/artifacts/**/*.json
+/artifacts/**/*.traj
+
+# C++ plugin build
+/cpp/build/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# LAMMPS run output
+log.lammps
+
+# local agent/editor state
+/.claude/
