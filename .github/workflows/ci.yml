@@ -21,6 +21,9 @@ jobs:
       LAMMPS_DIR: lammps-symmetrix/lammps
       LAMMPS_BUILD: lammps-symmetrix/lammps/build-ci
       LD_LIBRARY_PATH: ${{ github.workspace }}/lammps-symmetrix/lammps/build-ci
+      # the LAMMPS Python module is pure-Python — make it importable directly
+      # rather than building its wheel (its setup.py needs the LAMMPS src tree)
+      PYTHONPATH: ${{ github.workspace }}/lammps-symmetrix/lammps/python
 
     steps:
       - uses: actions/checkout@v4
@@ -75,9 +78,7 @@ jobs:
             git clone --depth=1 -b 3.28.0 https://gitlab.com/ase/ase.git ase-src
 
       - name: Set up the Python environment
-        run: |
-          uv sync
-          uv pip install ./lammps-symmetrix/lammps/python   # LAMMPS Python module
+        run: uv sync
 
       - name: Build the plugin
         run: |
