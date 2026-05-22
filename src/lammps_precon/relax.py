@@ -32,6 +32,11 @@ from .structures import TestStructure, by_name
 A_DEFAULT = 3.0
 C_STAB_DEFAULT = 0.1
 CG_RTOL = 1e-8
+# Per-atom step cap. ASE's PreconLBFGS default is 0.04 A; with a good
+# preconditioner that's needlessly conservative (see scripts/linesearch_study.py).
+# 0.1 matches LAMMPS's `min_modify dmax` default and converges in ~half the
+# force evaluations on the Packwood test set.
+MAXSTEP = 0.1
 
 #: Fixed-cell test structures (gamma-Al2O3 is the variable-cell Stage-6 case).
 FIXED_CELL_CASES = ["Cu_fcc", "MgO_x2", "Si_slab", "LaAlO3"]
@@ -79,7 +84,8 @@ def run_relaxation(structure: TestStructure, precon, *,
     logging_calc = LoggingCalculator(base_calc)
     atoms.calc = logging_calc
     try:
-        opt = PreconLBFGS(atoms, precon=precon, logfile=None, use_armijo=True)
+        opt = PreconLBFGS(atoms, precon=precon, maxstep=MAXSTEP,
+                          logfile=None, use_armijo=True)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             converged = bool(opt.run(fmax=structure.fmax, steps=steps))

@@ -29,7 +29,7 @@ from ase.optimize.precon import Exp, PreconLBFGS
 
 from . import artifacts
 from .calculators import make_calculator
-from .relax import A_DEFAULT, C_STAB_DEFAULT, CG_RTOL, TwoTierExp
+from .relax import A_DEFAULT, C_STAB_DEFAULT, CG_RTOL, MAXSTEP, TwoTierExp
 from .structures import gamma_al2o3, mgo_supercell
 
 #: A symmetric strain (≈4% scale + shear) applied to create a starting cell
@@ -114,7 +114,7 @@ def _run_vc_relaxation(atoms0: Atoms, engine: str, precon, *,
     atoms.calc = logging_calc
     try:
         opt = PreconLBFGS(atoms, precon=precon, variable_cell=True,
-                          logfile=None, use_armijo=True)
+                          maxstep=MAXSTEP, logfile=None, use_armijo=True)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             converged = bool(opt.run(fmax=fmax, steps=steps))
