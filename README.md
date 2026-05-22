@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jameskermode/lammps-precon-opt-fix/actions/workflows/ci.yml/badge.svg)](https://github.com/jameskermode/lammps-precon-opt-fix/actions/workflows/ci.yml)
 
-Standalone **`Exp` preconditioner** (Packwood / Makri–Ortner–Kermode, JCP 2016) for
+Standalone **`Exp` preconditioner** ([Packwood et al., J. Chem Phys. 2016](https://doi.org/10.1063/1.4947024)) for
 geometry optimisation in **LAMMPS**, working across arbitrary interatomic potentials.
 
 A LAMMPS-native C++ plugin (`fix precon/exp` + `min_style precon/lbfgs`) plus a
