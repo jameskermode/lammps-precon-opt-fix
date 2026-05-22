@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite the paper below.
+title: lammps-precon-opt
+abstract: >-
+  Standalone Exp preconditioner for geometry optimisation in LAMMPS,
+  working across arbitrary interatomic potentials. A LAMMPS-native C++
+  plugin (fix precon/exp + min_style precon/lbfgs) plus a Python
+  reference implementation validated stage-by-stage against ASE's
+  reference Exp preconditioner.
+authors:
+  - family-names: Kermode
+    given-names: James R.
+    orcid: https://orcid.org/0000-0001-6755-6271
+repository-code: https://github.com/jameskermode/lammps-precon-opt-fix
+license: GPL-2.0
+type: software
+references:
+  - type: article
+    title: A universal preconditioner for simulating condensed phase materials
+    authors:
+      - family-names: Packwood
+        given-names: Daniel
+      - family-names: Kermode
+        given-names: James
+      - family-names: Mones
+        given-names: Letif
+      - family-names: Bernstein
+        given-names: Noam
+      - family-names: Woolley
+        given-names: John
+      - family-names: Gould
+        given-names: Nicholas
+      - family-names: Ortner
+        given-names: Christoph
+      - family-names: Csányi
+        given-names: Gábor
+    journal: The Journal of Chemical Physics
+    year: 2016
+    volume: 144
+    issue: 16
+    pages: "164109"
+    doi: 10.1063/1.4947024
