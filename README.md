@@ -135,13 +135,20 @@ self-skip there (they need the foundation model).
 
 ## Convergence
 
-![fmax vs. number of force calls — ASE vs the C++ plugin](docs/convergence.png)
+![fmax vs. number of force calls — preconditioned vs. plain optimisers](docs/convergence.png)
 
-`fmax` against the number of force evaluations for ASE's `PreconLBFGS` + `Exp`
-and the C++ plugin's `min_style precon/lbfgs`, on the four Packwood test
-structures. Both reach the 10⁻³ eV/Å tolerance in a comparable number of force
-calls — the curves differ only because the two optimisers use different line
-searches. Regenerate with `python scripts/plot_convergence.py`.
+Lowest `fmax` reached against the number of force evaluations, on the four
+Packwood test structures. The **preconditioned** optimisers — ASE's
+`PreconLBFGS` + `Exp` and the C++ plugin's `min_style precon/lbfgs` — reach the
+10⁻³ eV/Å tolerance in a few dozen force calls; the **plain** optimisers — ASE
+`LBFGS` and LAMMPS `min_style cg` — need several times more. Regenerate with
+`python scripts/plot_convergence.py`.
+
+The two preconditioned optimisers share an identical LBFGS recursion, so they
+track each other closely — ASE's `PreconLBFGS` is run here with `maxstep=0.1`
+to match LAMMPS's `dmax`; `scripts/linesearch_study.py` shows ASE's `0.04`
+default is needlessly conservative once a good preconditioner is in use
+(e.g. Si_slab: 24 → 13 force calls).
 
 ## Layout
 

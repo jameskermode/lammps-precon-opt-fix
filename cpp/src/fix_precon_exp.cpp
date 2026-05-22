@@ -43,13 +43,38 @@ FixPreconExp::FixPreconExp(LAMMPS *lmp, int narg, char **arg)
   }
 }
 
-int FixPreconExp::setmask() { return 0; }
+int FixPreconExp::setmask() {
+  return trace_ ? FixConst::MIN_POST_FORCE : 0;
+}
 
 void FixPreconExp::init() {
   neighbor->add_request(this, NeighConst::REQ_FULL);
 }
 
 void FixPreconExp::init_list(int /*id*/, NeighList *ptr) { list_ = ptr; }
+
+/* ----------------------------------------------------------------------
+   `trace` — log one "PRECON_TRACE <force_call> <fmax>" line per force
+   evaluation during a minimize.  As a min_post_force fix this works with
+   any minimizer (precon/lbfgs or the built-in cg), giving a convergence
+   trace of fmax vs. the cumulative number of force calls.
+------------------------------------------------------------------------- */
+
+void FixPreconExp::min_post_force(int /*vflag*/) {
+  const int nlocal = atom->nlocal;
+  double **f = atom->f;
+  double local_max = 0.0;
+  for (int i = 0; i < nlocal; ++i) {
+    const double fsq =
+        f[i][0] * f[i][0] + f[i][1] * f[i][1] + f[i][2] * f[i][2];
+    if (fsq > local_max) local_max = fsq;
+  }
+  double global_max = 0.0;
+  MPI_Allreduce(&local_max, &global_max, 1, MPI_DOUBLE, MPI_MAX, world);
+  ++trace_count_;
+  utils::logmesg(lmp, "PRECON_TRACE {} {:.10e}\n", trace_count_,
+                 std::sqrt(global_max));
+}
 
 void FixPreconExp::set_params(double A, double c_stab) {
   A_ = A;

@@ -1,11 +1,18 @@
 #!/usr/bin/env python
-"""Plot fmax vs. number of force calls — ASE vs the C++ LAMMPS plugin.
+"""Plot fmax vs. number of force calls — preconditioned vs. plain optimisers.
 
-For each Packwood test structure, runs two fixed-cell relaxations:
-  * ASE   — `PreconLBFGS` + `Exp` (the reference), forces from LAMMPS/MACE;
-  * LAMMPS — the C++ plugin `min_style precon/lbfgs`.
-Both convergence traces (max force component vs cumulative force evaluations)
-are saved to `artifacts/figures/` and drawn as a 2x2 panel figure.
+For each Packwood test structure, runs four fixed-cell relaxations and plots
+the max force component against the cumulative number of force evaluations:
+
+  preconditioned (converge quickly):
+    * ASE     PreconLBFGS + Exp
+    * LAMMPS  min_style precon/lbfgs   (the C++ plugin)
+  un-preconditioned (slow — capped at UNPRECON_BUDGET force calls):
+    * ASE     LBFGS
+    * LAMMPS  min_style cg
+
+The gap between the two groups is the benefit of preconditioning. Traces are
+saved to `artifacts/figures/`; the figure to `docs/convergence.{png,pdf}`.
 
 Run inside the project venv (needs the Symmetrix/MACE environment):
     python scripts/plot_convergence.py
@@ -22,8 +29,8 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
 from ase.calculators.loggingcalc import LoggingCalculator  # noqa: E402
+from ase.optimize import LBFGS  # noqa: E402
 from ase.optimize.precon import Exp, PreconLBFGS  # noqa: E402
 
 from lammps_precon import artifacts  # noqa: E402
@@ -31,75 +38,109 @@ from lammps_precon.calculators import make_calculator  # noqa: E402
 from lammps_precon.cpp_parity import run_lammps_cpp  # noqa: E402
 from lammps_precon.structures import by_name  # noqa: E402
 
-# the Packwood benchmark structures
 PACKWOOD = ["Si_slab", "LaAlO3", "gamma_Al2O3", "iceVIII"]
-A_EXP, C_STAB = 3.0, 0.1  # Exp preconditioner parameters (match relax.py)
-MAX_STEPS = 2000
+A_EXP, C_STAB = 3.0, 0.1     # Exp preconditioner parameters
+ASE_PRECON_MAXSTEP = 0.1     # match LAMMPS' dmax (ASE's 0.04 default is slow —
+                             # see scripts/linesearch_study.py)
+MAX_STEPS = 2000             # iteration cap for the (fast) preconditioned runs
+UNPRECON_BUDGET = 300        # force-call cap for the (slow) plain runs
 
 
-def ase_trace(structure) -> list[tuple[int, float]]:
-    """ASE PreconLBFGS+Exp relaxation -> [(force_calls, fmax), ...]."""
+def _force_call_trace(logging_calc) -> list[tuple[int, float]]:
+    """Per-force-call fmax sequence recorded by an ASE LoggingCalculator."""
+    seq: list[float] = []
+    for vals in logging_calc.fmax.values():
+        seq.extend(vals)
+    return [(i, f) for i, f in enumerate(seq, start=1)]
+
+
+def _running_min(trace: list[tuple[int, float]]) -> list[tuple[int, float]]:
+    """Lowest fmax reached within N force calls — a clean, monotone curve
+    (the raw per-call trace zig-zags through every line-search trial)."""
+    out: list[tuple[int, float]] = []
+    best = float("inf")
+    for n, f in trace:
+        best = min(best, f)
+        out.append((n, best))
+    return out
+
+
+def ase_trace(structure, preconditioned: bool) -> list[tuple[int, float]]:
+    """ASE relaxation -> [(force_calls, fmax), ...] (one point per force call)."""
     atoms = structure.atoms.copy()
     logging_calc = LoggingCalculator(make_calculator(atoms, structure.engine))
     atoms.calc = logging_calc
-    opt = PreconLBFGS(atoms, precon=Exp(A=A_EXP, c_stab=C_STAB, solver="direct"),
-                      logfile=None, use_armijo=True)
-    raw: list[tuple[int, float]] = []
-
-    def record():
-        forces = atoms.get_forces()  # cached — the optimizer just evaluated it
-        n_calls = sum(len(v) for v in logging_calc.fmax.values())
-        raw.append((n_calls, float(np.linalg.norm(forces, axis=1).max())))
-
-    record()                          # the initial point
-    opt.attach(record, interval=1)    # one record per accepted step
+    if preconditioned:
+        opt = PreconLBFGS(atoms, precon=Exp(A=A_EXP, c_stab=C_STAB,
+                                            solver="direct"),
+                          maxstep=ASE_PRECON_MAXSTEP,
+                          logfile=None, use_armijo=True)
+        steps = MAX_STEPS
+    else:
+        opt = LBFGS(atoms, logfile=None)   # ~1 force call per step
+        steps = UNPRECON_BUDGET
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        opt.run(fmax=structure.fmax, steps=MAX_STEPS)
-    # one (force_calls, fmax) per distinct cumulative force-call count
-    return sorted(dict(raw).items())
+        opt.run(fmax=structure.fmax, steps=steps)
+    return _force_call_trace(logging_calc)
 
 
-def lammps_trace(structure) -> list[tuple[int, float]]:
-    """C++ `min_style precon/lbfgs` relaxation -> [(force_calls, fmax), ...]."""
+def lammps_trace(structure, min_style: str) -> list[tuple[int, float]]:
+    """LAMMPS relaxation -> [(force_calls, fmax), ...] (one point per call)."""
+    maxeval = None if min_style == "precon/lbfgs" else UNPRECON_BUDGET
     with tempfile.TemporaryDirectory() as tmp:
         res = run_lammps_cpp(structure.atoms.copy(), structure.engine,
                              fmax=structure.fmax, maxiter=MAX_STEPS,
-                             workdir=Path(tmp), trace=True)
+                             workdir=Path(tmp), trace=True,
+                             min_style=min_style, maxeval=maxeval)
     return [tuple(p) for p in res["trace"]]
 
 
+# (label, cache key, line style, colour, trace getter)
+CURVES = [
+    ("ASE  PreconLBFGS + Exp", "ase_precon", "-", "C0",
+     lambda s: ase_trace(s, preconditioned=True)),
+    ("LAMMPS  min_style precon/lbfgs", "lammps_precon", "-", "C1",
+     lambda s: lammps_trace(s, "precon/lbfgs")),
+    ("ASE  LBFGS  (no precon)", "ase_plain", "--", "C3",
+     lambda s: ase_trace(s, preconditioned=False)),
+    ("LAMMPS  min_style cg  (no precon)", "lammps_cg", "--", "C4",
+     lambda s: lammps_trace(s, "cg")),
+]
+
+
 def main() -> None:
-    tracedir = artifacts.ARTIFACT_DIR / "figures"      # generated trace JSON
+    tracedir = artifacts.ARTIFACT_DIR / "figures"
     tracedir.mkdir(parents=True, exist_ok=True)
-    docsdir = artifacts.ARTIFACT_DIR.parent / "docs"   # committed figure
+    docsdir = artifacts.ARTIFACT_DIR.parent / "docs"
     docsdir.mkdir(exist_ok=True)
     fig, axes = plt.subplots(2, 2, figsize=(11, 8.5))
 
     for ax, name in zip(axes.flat, PACKWOOD):
         structure = by_name(name)
         natoms = len(structure.atoms)
-        print(f"[plot_convergence] {name} ({natoms} atoms) ...", flush=True)
-        ase_t = ase_trace(structure)
-        lmp_t = lammps_trace(structure)
-        artifacts.save_json(tracedir / f"{name}_convergence.json",
-                            {"ase": ase_t, "lammps": lmp_t})
-        print(f"    ASE    {ase_t[-1][0]:4d} force calls -> fmax {ase_t[-1][1]:.2e}")
-        print(f"    LAMMPS {lmp_t[-1][0]:4d} force calls -> fmax {lmp_t[-1][1]:.2e}")
-
-        ax.semilogy(*zip(*ase_t), "o-", ms=4, color="C0",
-                    label="ASE  (PreconLBFGS + Exp)")
-        ax.semilogy(*zip(*lmp_t), "s--", ms=4, color="C1",
-                    label="LAMMPS  (min_style precon/lbfgs)")
+        print(f"[plot_convergence] {name} ({natoms} atoms)", flush=True)
+        # one cache file per (structure, curve) — delete a file to recompute it
+        for label, key, ls, colour, getter in CURVES:
+            cache = tracedir / f"{name}__{key}.json"
+            if cache.exists():
+                trace = [tuple(p) for p in artifacts.load_json(cache)]
+            else:
+                trace = getter(structure)
+                artifacts.save_json(cache, trace)
+            curve = _running_min(trace)
+            ax.semilogy(*zip(*curve), ls, color=colour, lw=1.6, label=label)
+            print(f"    {label:34s} {curve[-1][0]:4d} calls -> "
+                  f"fmax {curve[-1][1]:.2e}", flush=True)
         ax.axhline(structure.fmax, ls=":", color="grey", lw=1)
         ax.set_title(f"{name}  ({natoms} atoms)")
         ax.set_xlabel("number of force calls")
         ax.set_ylabel("fmax  (eV / Å)")
         ax.grid(True, which="both", ls=":", alpha=0.4)
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=7)
 
-    fig.suptitle("Geometry-optimisation convergence: ASE vs the C++ LAMMPS "
-                 "plugin — Packwood test set", fontsize=12)
+    fig.suptitle("Geometry-optimisation convergence — preconditioned vs. "
+                 "plain optimisers (Packwood test set)", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     for ext in ("png", "pdf"):
         path = docsdir / f"convergence.{ext}"

@@ -27,6 +27,7 @@ class FixPreconExp : public Fix {
   int setmask() override;
   void init() override;
   void init_list(int, class NeighList *) override;
+  void min_post_force(int) override;     // per-force-call convergence trace
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
 
@@ -59,6 +60,7 @@ class FixPreconExp : public Fix {
   double user_r_cut_ = -1.0;
   std::string dump_prefix_;
   bool trace_ = false;
+  int trace_count_ = 0;    // cumulative force evaluations (when trace_)
   double cg_rtol_ = 1.0e-10;
   int cg_iterations_ = 0;
 

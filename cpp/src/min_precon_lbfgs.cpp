@@ -10,7 +10,6 @@
 #include "output.h"
 #include "timer.h"
 #include "update.h"
-#include "utils.h"
 
 #include <cmath>
 #include <cstring>
@@ -178,11 +177,6 @@ void MinPreconLBFGS::setup_precon() {
 int MinPreconLBFGS::iterate(int maxiter) {
   if (!precon_ready_) setup_precon();
 
-  // optional convergence trace: "PRECON_TRACE <iter> <neval> <fmax>" per line
-  if (fix_->trace())
-    utils::logmesg(lmp, "PRECON_TRACE {} {} {:.10e}\n", 0, neval,
-                   std::sqrt(fnorm_max()));
-
   for (int iter = 0; iter < maxiter; ++iter) {
     if (timer->check_timeout(niter)) return TIMEOUT;
     update->ntimestep = ++update->ntimestep;
@@ -305,10 +299,6 @@ int MinPreconLBFGS::iterate(int maxiter) {
     eprevious = ecurrent;
     const int fail = (this->*linemin)(ecurrent, alpha_final);
     if (fail) return fail;
-
-    if (fix_->trace())
-      utils::logmesg(lmp, "PRECON_TRACE {} {} {:.10e}\n", niter, neval,
-                     std::sqrt(fnorm_max()));
 
     // convergence (fnorm_* include the cell DOF fextra)
     if (neval >= update->max_eval) return MAXEVAL;

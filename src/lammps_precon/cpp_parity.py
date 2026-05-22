@@ -55,11 +55,11 @@ def _parse_minimize_log(logfile: Path) -> dict:
     m = re.search(r"Stopping criterion\s*=\s*(.+)", text)
     if m:
         stop = m.group(1).strip()
-    # optional per-iteration convergence trace (fix precon/exp ... trace):
-    # (cumulative force evaluations, fmax) at each iterate
-    trace = [(int(neval), float(fmax))
-             for _it, neval, fmax in re.findall(
-                 r"PRECON_TRACE\s+(\d+)\s+(\d+)\s+(\S+)", text)]
+    # optional per-force-call convergence trace (fix precon/exp ... trace):
+    # (cumulative force evaluations, fmax) at every force evaluation
+    trace = [(int(n), float(fmax))
+             for n, fmax in re.findall(
+                 r"PRECON_TRACE\s+(\d+)\s+(\S+)", text)]
     return dict(n_steps=n_steps, n_force=n_force, stop_reason=stop,
                 converged=stop in ("force tolerance", "energy tolerance"),
                 trace=trace)
@@ -74,11 +74,17 @@ def run_lammps_cpp(
     workdir: Path,
     dump_prefix: str | None = None,
     trace: bool = False,
+    min_style: str = "precon/lbfgs",
+    maxeval: int | None = None,
 ) -> dict:
-    """Run a `min_style precon/lbfgs` relaxation in LAMMPS via the C++ plugin.
+    """Run a LAMMPS relaxation via the C++ plugin.
 
-    With ``trace=True`` the result dict's ``trace`` entry is a list of
-    ``(cumulative_force_evals, fmax)`` pairs, one per minimizer iteration.
+    ``min_style`` selects the minimizer (``precon/lbfgs`` — the plugin — or a
+    built-in style such as ``cg``). ``fix precon/exp`` is always present; for a
+    built-in minimizer it just provides the trace. With ``trace=True`` the
+    result dict's ``trace`` entry is a list of ``(cumulative_force_evals,
+    fmax)`` pairs, one per force evaluation. ``maxeval`` caps the force
+    evaluations (default: a large value).
     """
     from lammps import lammps
 
@@ -108,10 +114,11 @@ def run_lammps_cpp(
         f"read_data {datafile}",
         *mass_cmds,
         *pair_cmds,
-        "min_style precon/lbfgs",
+        f"min_style {min_style}",
         fix_cmd,
         "min_modify norm max",
-        f"minimize 0.0 {fmax} {maxiter} {max(400, 200 * maxiter)}",
+        f"minimize 0.0 {fmax} {maxiter} "
+        f"{maxeval if maxeval else max(400, 200 * maxiter)}",
     ]
     lmp.commands_string("\n".join(commands))
 
