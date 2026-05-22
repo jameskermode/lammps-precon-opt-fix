@@ -55,9 +55,8 @@ and [`uv`](https://docs.astral.sh/uv/).
 3. **Python environment** (for the validation suite):
 
    ```bash
-   git clone -b 3.28.0 https://gitlab.com/ase/ase.git ase-src
-   uv sync
-   uv pip install ./lammps-symmetrix/lammps/python   # the LAMMPS Python module
+   uv sync                                          # ASE + the other deps
+   uv pip install ./lammps-symmetrix/lammps/python  # the LAMMPS Python module
    ```
 
 4. **(MACE engine only)** convert the MACE foundation model to Symmetrix JSON:
@@ -135,7 +134,7 @@ self-skip there (they need the foundation model).
 | `tests/` | stage-by-stage pytest parity checks |
 | `scripts/` | build + model-conversion scripts |
 | `spec.md` | the full specification |
-| `lammps-symmetrix/`, `ase-src/`, `models/` | external clones / generated (gitignored) |
+| `lammps-symmetrix/`, `models/` | external clones / generated (gitignored) |
 
 ## Status
 

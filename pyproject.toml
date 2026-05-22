@@ -5,7 +5,7 @@ description = "Standalone Exp preconditioner for LAMMPS geometry optimisation, v
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
-    "ase",
+    "ase==3.28.0",  # pinned: ASE's Exp preconditioner is the validation reference
     "numpy",
     "scipy",
     "pyamg",
@@ -22,13 +22,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/lammps_precon"]
 
-# Use the locally cloned ASE checkout (3.28.0, in ase-src/) so its Exp
-# preconditioner source is explorable and is exactly the code the parity
-# checks reuse. The directory is "ase-src" not "ase" to avoid shadowing the
-# installed package when Python runs from the repo root.
-[tool.uv.sources]
-ase = { path = "ase-src", editable = true }
 # CPU-only torch — this project does not need the ~2.5 GB CUDA torch wheel.
+# (To hack on ASE itself, `uv pip install -e` a local ASE checkout.)
+[tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
 
 [[tool.uv.index]]

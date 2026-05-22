@@ -72,13 +72,8 @@ jobs:
             -D PKG_MANYBODY=yes
           cmake --build "$LAMMPS_BUILD" -j "$(nproc)"
 
-      - name: Clone ASE
-        run: |
-          [ -d ase-src ] || \
-            git clone --depth=1 -b 3.28.0 https://gitlab.com/ase/ase.git ase-src
-
       - name: Set up the Python environment
-        run: uv sync
+        run: uv sync   # installs ASE (3.28.0) and the other deps from PyPI
 
       - name: Build the plugin
         run: |
