@@ -40,8 +40,9 @@ from lammps_precon.structures import by_name  # noqa: E402
 
 PACKWOOD = ["Si_slab", "LaAlO3", "gamma_Al2O3", "iceVIII"]
 A_EXP, C_STAB = 3.0, 0.1     # Exp preconditioner parameters
-ASE_PRECON_MAXSTEP = 0.1     # match LAMMPS' dmax (ASE's 0.04 default is slow —
-                             # see scripts/linesearch_study.py)
+ASE_PRECON_MAXSTEP = 1.0     # effectively "no cap" — the Armijo line search
+                             # handles safety (see scripts/maxstep_study.py)
+LAMMPS_DMAX = 1.0            # ditto on the LAMMPS side (min_modify dmax)
 MAX_STEPS = 2000             # iteration cap for the (fast) preconditioned runs
 UNPRECON_BUDGET = 300        # force-call cap for the (slow) plain runs
 
@@ -88,11 +89,12 @@ def ase_trace(structure, preconditioned: bool) -> list[tuple[int, float]]:
 def lammps_trace(structure, min_style: str) -> list[tuple[int, float]]:
     """LAMMPS relaxation -> [(force_calls, fmax), ...] (one point per call)."""
     maxeval = None if min_style == "precon/lbfgs" else UNPRECON_BUDGET
+    dmax = LAMMPS_DMAX if min_style == "precon/lbfgs" else None
     with tempfile.TemporaryDirectory() as tmp:
         res = run_lammps_cpp(structure.atoms.copy(), structure.engine,
                              fmax=structure.fmax, maxiter=MAX_STEPS,
                              workdir=Path(tmp), trace=True,
-                             min_style=min_style, maxeval=maxeval)
+                             min_style=min_style, maxeval=maxeval, dmax=dmax)
     return [tuple(p) for p in res["trace"]]
 
 

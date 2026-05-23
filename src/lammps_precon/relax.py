@@ -32,11 +32,13 @@ from .structures import TestStructure, by_name
 A_DEFAULT = 3.0
 C_STAB_DEFAULT = 0.1
 CG_RTOL = 1e-8
-# Per-atom step cap. ASE's PreconLBFGS default is 0.04 A; with a good
-# preconditioner that's needlessly conservative (see scripts/linesearch_study.py).
-# 0.1 matches LAMMPS's `min_modify dmax` default and converges in ~half the
-# force evaluations on the Packwood test set.
-MAXSTEP = 0.1
+# Per-atom step cap. With an Armijo-based line search (ASE's default, or
+# LAMMPS' backtrack/quadratic) the Armijo condition alone keeps the relaxation
+# safe — see scripts/maxstep_study.py: cap = 1.0 A converges in fewer force
+# calls than ASE's 0.04 default on every Packwood structure, with no
+# divergence. 1.0 is the maximum ASE allows (`maxstep > 1.0` is rejected by
+# PreconLBFGS) and is effectively "no cap" for any reasonable LBFGS step.
+MAXSTEP = 1.0
 
 #: Fixed-cell test structures (gamma-Al2O3 is the variable-cell Stage-6 case).
 FIXED_CELL_CASES = ["Cu_fcc", "MgO_x2", "Si_slab", "LaAlO3"]

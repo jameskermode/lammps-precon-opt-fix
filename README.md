@@ -145,10 +145,14 @@ Packwood test structures. The **preconditioned** optimisers — ASE's
 `python scripts/plot_convergence.py`.
 
 The two preconditioned optimisers share an identical LBFGS recursion, so they
-track each other closely — ASE's `PreconLBFGS` is run here with `maxstep=0.1`
-to match LAMMPS's `dmax`; `scripts/linesearch_study.py` shows ASE's `0.04`
-default is needlessly conservative once a good preconditioner is in use
-(e.g. Si_slab: 24 → 13 force calls).
+track each other closely. `scripts/maxstep_study.py` further shows that with
+an Armijo-based line search the per-atom step cap (ASE `maxstep`, LAMMPS
+`min_modify dmax`) is **not needed** — setting it to 1.0 Å (effectively "off")
+converges in fewer force calls than ASE's stock 0.04 default on every Packwood
+structure, with no divergence: the Armijo condition handles safety on its own.
+The Python orchestration (`relax.py`, `vcrelax.py`) uses `MAXSTEP=1.0`
+accordingly, and the figure above runs both ports with the cap effectively
+off (e.g. Si_slab: 24 → 12 force calls).
 
 ## Layout
 

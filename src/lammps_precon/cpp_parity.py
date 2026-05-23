@@ -76,6 +76,8 @@ def run_lammps_cpp(
     trace: bool = False,
     min_style: str = "precon/lbfgs",
     maxeval: int | None = None,
+    line_style: str | None = None,
+    dmax: float | None = None,
 ) -> dict:
     """Run a LAMMPS relaxation via the C++ plugin.
 
@@ -84,7 +86,8 @@ def run_lammps_cpp(
     built-in minimizer it just provides the trace. With ``trace=True`` the
     result dict's ``trace`` entry is a list of ``(cumulative_force_evals,
     fmax)`` pairs, one per force evaluation. ``maxeval`` caps the force
-    evaluations (default: a large value).
+    evaluations (default: a large value). ``line_style`` / ``dmax`` issue the
+    corresponding ``min_modify`` commands (LAMMPS defaults otherwise).
     """
     from lammps import lammps
 
@@ -117,6 +120,8 @@ def run_lammps_cpp(
         f"min_style {min_style}",
         fix_cmd,
         "min_modify norm max",
+        *([f"min_modify line {line_style}"] if line_style else []),
+        *([f"min_modify dmax {dmax}"] if dmax is not None else []),
         f"minimize 0.0 {fmax} {maxiter} "
         f"{maxeval if maxeval else max(400, 200 * maxiter)}",
     ]
