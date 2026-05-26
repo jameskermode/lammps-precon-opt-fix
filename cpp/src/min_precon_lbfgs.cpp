@@ -24,7 +24,14 @@ static constexpr double EXP_C_STAB = 0.1;
 
 /* ---------------------------------------------------------------------- */
 
-MinPreconLBFGS::MinPreconLBFGS(LAMMPS *lmp) : MinLineSearch(lmp) {}
+MinPreconLBFGS::MinPreconLBFGS(LAMMPS *lmp) : MinLineSearch(lmp) {
+  // Default the per-atom step cap to 1.0 A (LAMMPS's stock Min default is 0.1).
+  // With LAMMPS's Armijo-based linemins (backtrack / quadratic — the defaults
+  // for min_modify line) the sufficient-decrease test alone keeps the step
+  // safe, and scripts/maxstep_study.py shows the tighter caps just throttle
+  // convergence on the Packwood set. Override with `min_modify dmax ...`.
+  dmax = 1.0;
+}
 
 void MinPreconLBFGS::init() {
   MinLineSearch::init();

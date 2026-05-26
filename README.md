@@ -151,8 +151,10 @@ an Armijo-based line search the per-atom step cap (ASE `maxstep`, LAMMPS
 converges in fewer force calls than ASE's stock 0.04 default on every Packwood
 structure, with no divergence: the Armijo condition handles safety on its own.
 The Python orchestration (`relax.py`, `vcrelax.py`) uses `MAXSTEP=1.0`
-accordingly, and the figure above runs both ports with the cap effectively
-off (e.g. Si_slab: 24 → 12 force calls).
+accordingly, and the C++ plugin's `min_style precon/lbfgs` likewise overrides
+LAMMPS's stock `dmax=0.1` default to `1.0` from its constructor — override
+with `min_modify dmax ...` if needed (e.g. for `min_modify line forcezero`,
+which is *not* Armijo-based).
 
 ## Layout
 
