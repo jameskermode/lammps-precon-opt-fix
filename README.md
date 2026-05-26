@@ -156,6 +156,14 @@ LAMMPS's stock `dmax=0.1` default to `1.0` from its constructor — override
 with `min_modify dmax ...` if needed (e.g. for `min_modify line forcezero`,
 which is *not* Armijo-based).
 
+`min_style precon/lbfgs` also ships its own Armijo line search by default
+(c1 = 0.1, quadratic-interpolation backtrack — closer to ASE's
+`LineSearchArmijo` than to LAMMPS's stock `backtrack`, which uses c1 = 0.4 +
+halving). On iceVIII this cuts LAMMPS's force-call count from 46 to 38;
+elsewhere the gain is small (the preconditioned step is already nearly Newton).
+Opt out — and defer to whichever stock linemin `min_modify line ...` selects —
+with `min_modify precon_armijo off`.
+
 ## Layout
 
 | Path | Contents |

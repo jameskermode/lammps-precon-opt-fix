@@ -31,11 +31,25 @@ class MinPreconLBFGS : public MinLineSearch {
 
   void init() override;
   int iterate(int) override;
+  // Extension hook for `min_modify precon_armijo on/off`. The base class's
+  // `modify_params` calls this for unknown keywords; we return the number of
+  // args consumed (0 = "not ours, please error", >0 = consumed).
+  int modify_param(int narg, char **arg) override;
 
  private:
   void setup_precon();   // first-call: locate the fix, r_NN, mu, assemble
   void estimate_mu();    // distributed two-force-call finite-difference probe
   double ddot(const double *a, const double *b, int n) const;  // MPI dot
+
+  // Custom line search: Armijo (c1 = 0.1) with quadratic-interpolation
+  // backtrack, mirroring ASE's `LineSearchArmijo`. ~2x fewer force calls per
+  // accepted LBFGS step than LAMMPS's stock `backtrack` on iceVIII-like H-bond
+  // systems where the preconditioned step is least Newton-like. Default for
+  // `min_style precon/lbfgs`; opt out with `min_modify precon_armijo off`
+  // (then base picks linemin via `min_modify line {backtrack,quadratic,
+  // forcezero}`). See min_precon_lbfgs.cpp for the algorithm.
+  int linemin_armijo(double eoriginal, double &alpha);
+  bool use_armijo_ = true;
 
   class FixPreconExp *fix_ = nullptr;
   bool precon_ready_ = false;

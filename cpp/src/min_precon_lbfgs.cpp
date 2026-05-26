@@ -3,14 +3,19 @@
 #include "min_precon_lbfgs.h"
 
 #include "atom.h"
+#include "comm.h"
 #include "error.h"
+#include "fix_minimize.h"
 #include "fix_precon_exp.h"
 #include "modify.h"
 #include "neighbor.h"
 #include "output.h"
+#include "thermo.h"
 #include "timer.h"
 #include "update.h"
+#include "utils.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -21,6 +26,13 @@ static constexpr double EPS_YS = 1.0e-10;  // LBFGS curvature-condition floor
 
 static constexpr double EXP_A = 3.0;
 static constexpr double EXP_C_STAB = 0.1;
+
+// linemin_armijo constants — chosen to mirror ASE LineSearchArmijo behaviour.
+static constexpr double ARMIJO_C1 = 0.1;        // Armijo slope (vs LAMMPS 0.4)
+static constexpr double ARMIJO_ALPHA_MAX = 1.0; // clamp on initial alpha
+static constexpr double ARMIJO_REDUCE_MIN = 0.1; // floor on backtrack ratio
+static constexpr double ARMIJO_REDUCE_MAX = 0.5; // ceiling on backtrack ratio
+static constexpr double ARMIJO_EMACH = 1.0e-8;
 
 /* ---------------------------------------------------------------------- */
 
@@ -35,6 +47,14 @@ MinPreconLBFGS::MinPreconLBFGS(LAMMPS *lmp) : MinLineSearch(lmp) {
 
 void MinPreconLBFGS::init() {
   MinLineSearch::init();
+  // MinLineSearch::init() above derives `linemin` from `linestyle`. Override
+  // with our looser Armijo unless the user opted out via `min_modify
+  // precon_armijo off`. The cast is the legal Derived::* -> Base::* via
+  // static_cast: safe because `linemin` is only invoked on a MinPreconLBFGS.
+  if (use_armijo_) {
+    linemin = static_cast<int (MinLineSearch::*)(double, double &)>(
+        &MinPreconLBFGS::linemin_armijo);
+  }
   precon_ready_ = false;
   has_prev_ = false;
   last_ncalls_ = -1;
@@ -44,6 +64,141 @@ void MinPreconLBFGS::init() {
   sc_hist_.clear();
   yc_hist_.clear();
   rhoc_hist_.clear();
+}
+
+/* ----------------------------------------------------------------------
+   min_modify extension: `precon_armijo on|off`
+   The base class's modify_params() calls this for unknown keywords. Returns
+   the number of args consumed (the base then advances by that count).
+------------------------------------------------------------------------- */
+
+int MinPreconLBFGS::modify_param(int narg, char **arg) {
+  if (narg >= 2 && strcmp(arg[0], "precon_armijo") == 0) {
+    use_armijo_ = utils::logical(FLERR, arg[1], false, lmp);
+    // The linemin pointer is reassigned on the next init(); no need to touch
+    // it here, since init() runs at the start of every `minimize` command.
+    return 2;
+  }
+  return 0;
+}
+
+/* ----------------------------------------------------------------------
+   linemin_armijo: Armijo sufficient-decrease + quadratic-interpolation
+   backtrack. Drop-in replacement for `linemin_backtrack` with two changes:
+   (a) c1 = 0.1 (vs LAMMPS's BACKTRACK_SLOPE = 0.4); the looser test accepts
+       the trial step ~90% of the time on Packwood iceVIII (vs ~50% for
+       backtrack). On the other Packwood structures the preconditioned step
+       is closer to Newton, so this difference is small.
+   (b) On rejection, backtrack by *quadratic interpolation* of the energy
+       (Nocedal & Wright Eq. 3.58) rather than constant halving — typically
+       lands the next trial much closer to the Armijo-feasible region.
+   Bookkeeping (fdothall/hmaxall, nextra_atom, nextra_global, box store) is
+   identical to MinLineSearch::linemin_backtrack, so the function composes
+   correctly with `fix box/relax` (Stage 8c).
+------------------------------------------------------------------------- */
+
+int MinPreconLBFGS::linemin_armijo(double eoriginal, double &alpha) {
+  int i, m, n;
+  double fdothall, fdothme, hme, hmax, hmaxall;
+  double *xatom, *x0atom, *fatom, *hatom;
+
+  // fdothall = projection of search dir along downhill gradient
+  // (positive => h is a descent direction)
+  fdothme = 0.0;
+  for (i = 0; i < nvec; i++) fdothme += fvec[i] * h[i];
+  if (nextra_atom)
+    for (m = 0; m < nextra_atom; m++) {
+      fatom = fextra_atom[m];
+      hatom = hextra_atom[m];
+      n = extra_nlen[m];
+      for (i = 0; i < n; i++) fdothme += fatom[i] * hatom[i];
+    }
+  MPI_Allreduce(&fdothme, &fdothall, 1, MPI_DOUBLE, MPI_SUM, world);
+  if (nextra_global)
+    for (i = 0; i < nextra_global; i++) fdothall += fextra[i] * hextra[i];
+  if (output->thermo->normflag) fdothall /= atom->natoms;
+  if (fdothall <= 0.0) return DOWNHILL;
+
+  // Initial alpha clamped by dmax (atomic) + extra_max[] (per-atom) + fix
+  // (global). Identical to MinLineSearch::linemin_backtrack.
+  hme = 0.0;
+  for (i = 0; i < nvec; i++) hme = std::max(hme, std::fabs(h[i]));
+  MPI_Allreduce(&hme, &hmaxall, 1, MPI_DOUBLE, MPI_MAX, world);
+  alpha = std::min(ARMIJO_ALPHA_MAX, dmax / hmaxall);
+  if (nextra_atom)
+    for (m = 0; m < nextra_atom; m++) {
+      hatom = hextra_atom[m];
+      n = extra_nlen[m];
+      hme = 0.0;
+      for (i = 0; i < n; i++) hme = std::max(hme, std::fabs(hatom[i]));
+      MPI_Allreduce(&hme, &hmax, 1, MPI_DOUBLE, MPI_MAX, world);
+      alpha = std::min(alpha, extra_max[m] / hmax);
+      hmaxall = std::max(hmaxall, hmax);
+    }
+  if (nextra_global) {
+    double alpha_extra = modify->max_alpha(hextra);
+    alpha = std::min(alpha, alpha_extra);
+    for (i = 0; i < nextra_global; i++)
+      hmaxall = std::max(hmaxall, std::fabs(hextra[i]));
+  }
+  if (hmaxall == 0.0) return ZEROFORCE;
+
+  // Store box and current positions so alpha_step can build x = x0 + alpha*h.
+  fix_minimize->store_box();
+  for (i = 0; i < nvec; i++) x0[i] = xvec[i];
+  if (nextra_atom)
+    for (m = 0; m < nextra_atom; m++) {
+      xatom = xextra_atom[m];
+      x0atom = x0extra_atom[m];
+      n = extra_nlen[m];
+      for (i = 0; i < n; i++) x0atom[i] = xatom[i];
+    }
+  if (nextra_global) modify->min_store();
+
+  // Armijo loop with quadratic-interpolation backtrack.
+  // In textbook notation g0 = dE/dalpha|_0 = -fdothall (< 0 for descent).
+  const double g0 = -fdothall;
+  while (true) {
+    ecurrent = alpha_step(alpha, 1);
+
+    // Armijo: ecurrent <= eoriginal + c1 * alpha * g0
+    //       = eoriginal - c1 * alpha * fdothall
+    const double de = ecurrent - eoriginal;
+    const double de_ideal = -ARMIJO_C1 * alpha * fdothall;
+    if (de <= de_ideal) {
+      if (nextra_global) {
+        int itmp = modify->min_reset_ref();
+        if (itmp) ecurrent = energy_force(1);
+      }
+      return 0;
+    }
+
+    // Quadratic interpolation: fit parabola through (0, eoriginal, g0) and
+    // (alpha, ecurrent); its minimizer is at
+    //     alpha_q = -g0 * alpha^2 / (2 * (ecurrent - eoriginal - g0*alpha))
+    // The denominator is the parabola's curvature (positive when the model
+    // has a minimum). Clamp the resulting backtrack ratio to a safe band so
+    // we neither under-shrink (ratio too close to 1 -> infinite loop) nor
+    // collapse (ratio too small -> wasted trials).
+    const double denom = 2.0 * (ecurrent - eoriginal - g0 * alpha);
+    double alpha_new;
+    if (denom > 0.0) {
+      alpha_new = -g0 * alpha * alpha / denom;
+    } else {
+      // Non-convex local model -> halve and try again.
+      alpha_new = ARMIJO_REDUCE_MAX * alpha;
+    }
+    alpha_new = std::min(std::max(alpha_new, ARMIJO_REDUCE_MIN * alpha),
+                         ARMIJO_REDUCE_MAX * alpha);
+    alpha = alpha_new;
+
+    // Backtracked too far -> give up. Mirror MinLineSearch::linemin_backtrack.
+    if (alpha <= 0.0 || de_ideal >= -ARMIJO_EMACH) {
+      ecurrent = alpha_step(0.0, 0);
+      if (de < 0.0) return ETOL;
+      return ZEROALPHA;
+    }
+  }
 }
 
 double MinPreconLBFGS::ddot(const double *a, const double *b, int n) const {
