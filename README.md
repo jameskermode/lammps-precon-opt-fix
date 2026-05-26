@@ -159,10 +159,13 @@ which is *not* Armijo-based).
 `min_style precon/lbfgs` also ships its own Armijo line search by default
 (c1 = 0.1, quadratic-interpolation backtrack — closer to ASE's
 `LineSearchArmijo` than to LAMMPS's stock `backtrack`, which uses c1 = 0.4 +
-halving). On iceVIII this cuts LAMMPS's force-call count from 46 to 38;
-elsewhere the gain is small (the preconditioned step is already nearly Newton).
-Opt out — and defer to whichever stock linemin `min_modify line ...` selects —
-with `min_modify precon_armijo off`.
+halving) plus a Nocedal–Wright Eq. 3.60 initial-α heuristic that predicts the
+next line search's starting α from the previous iteration's energy decrease.
+Together they cut iceVIII's force-call count from 46 to 35 and drop the
+force-calls-per-LBFGS-step ratio to ~1.0 on the other Packwood structures
+(every step accepts on the first trial). Opt out — and defer to whichever
+stock linemin `min_modify line ...` selects — with `min_modify precon_armijo
+off`.
 
 ## Layout
 

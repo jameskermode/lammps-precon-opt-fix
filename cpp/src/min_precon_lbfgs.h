@@ -50,6 +50,13 @@ class MinPreconLBFGS : public MinLineSearch {
   // forcezero}`). See min_precon_lbfgs.cpp for the algorithm.
   int linemin_armijo(double eoriginal, double &alpha);
   bool use_armijo_ = true;
+  // Initial-alpha heuristic state (Nocedal & Wright Eq. 3.60). After a
+  // successful line search, remember the energy at the start of *that*
+  // search so the next call can predict a good starting alpha from the
+  // previous iteration's decrease. Cleared whenever the LBFGS history is
+  // (init / neighbour-list rebuild / curvature reset).
+  double eoriginal_prev_ = 0.0;
+  bool has_eoriginal_prev_ = false;
 
   class FixPreconExp *fix_ = nullptr;
   bool precon_ready_ = false;

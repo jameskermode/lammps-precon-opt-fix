@@ -57,6 +57,7 @@ void MinPreconLBFGS::init() {
   }
   precon_ready_ = false;
   has_prev_ = false;
+  has_eoriginal_prev_ = false;
   last_ncalls_ = -1;
   s_hist_.clear();
   y_hist_.clear();
@@ -143,6 +144,24 @@ int MinPreconLBFGS::linemin_armijo(double eoriginal, double &alpha) {
   }
   if (hmaxall == 0.0) return ZEROFORCE;
 
+  // Initial-alpha heuristic (Nocedal & Wright Eq. 3.60): predict alpha from
+  // the previous iteration's energy decrease and current directional
+  // derivative. Far from the minimum, the predicted alpha is small and we
+  // start at a step likely to satisfy Armijo on the first try; near the
+  // minimum the prediction tends to 1.0 and we recover Newton-step
+  // behaviour. The dmax-based clamp above is preserved as the safety bound:
+  // alpha_pred can only shrink the starting step, never grow it past dmax.
+  if (has_eoriginal_prev_) {
+    // 1.01 safety factor mirrors ASE's LineSearchArmijo.
+    const double alpha_pred =
+        2.02 * (eoriginal_prev_ - eoriginal) / fdothall;
+    if (alpha_pred > 0.0) {
+      double a = alpha_pred;
+      if (std::fabs(a - 1.0) < 0.01) a = 1.0;  // round to Newton step
+      alpha = std::min(alpha, a);
+    }
+  }
+
   // Store box and current positions so alpha_step can build x = x0 + alpha*h.
   fix_minimize->store_box();
   for (i = 0; i < nvec; i++) x0[i] = xvec[i];
@@ -170,6 +189,10 @@ int MinPreconLBFGS::linemin_armijo(double eoriginal, double &alpha) {
         int itmp = modify->min_reset_ref();
         if (itmp) ecurrent = energy_force(1);
       }
+      // Remember this iteration's starting energy so the next line search
+      // can predict its initial alpha from this iteration's decrease.
+      eoriginal_prev_ = eoriginal;
+      has_eoriginal_prev_ = true;
       return 0;
     }
 
@@ -313,6 +336,7 @@ void MinPreconLBFGS::setup_precon() {
   yc_hist_.clear();
   rhoc_hist_.clear();
   has_prev_ = false;
+  has_eoriginal_prev_ = false;
 
   fix_->set_params(EXP_A, EXP_C_STAB);
   const double r_NN = fix_->compute_r_NN();
@@ -352,6 +376,7 @@ int MinPreconLBFGS::iterate(int maxiter) {
       s_hist_.clear();  y_hist_.clear();  rho_hist_.clear();
       sc_hist_.clear(); yc_hist_.clear(); rhoc_hist_.clear();
       has_prev_ = false;
+      has_eoriginal_prev_ = false;
       last_ncalls_ = neighbor->ncalls;
     }
     if (static_cast<int>(grad_.size()) != nvec) {
@@ -361,6 +386,7 @@ int MinPreconLBFGS::iterate(int maxiter) {
       s_hist_.clear();  y_hist_.clear();  rho_hist_.clear();
       sc_hist_.clear(); yc_hist_.clear(); rhoc_hist_.clear();
       has_prev_ = false;
+      has_eoriginal_prev_ = false;
     }
     if (static_cast<int>(gradc_.size()) != ne) {
       gradc_.assign(ne, 0.0);
