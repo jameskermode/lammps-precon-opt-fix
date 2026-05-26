@@ -1,12 +1,18 @@
 #!/usr/bin/env python
 """Empirical study — automated / auto-tuned step cap (maxstep / dmax).
 
-Sweeps every existing preconditioned-LBFGS variant on the Packwood structures
-and asks: is there a line-search choice that converges *without* a tightly
-tuned step cap?
+Sweeps every preconditioned-LBFGS line-search variant on the Packwood
+structures and asks: is there a line-search choice that converges *without*
+a tightly tuned step cap?
 
   * ASE PreconLBFGS + Exp     x use_armijo = {True (Armijo), False (strong Wolfe)}
-  * LAMMPS min_style precon/lbfgs  x min_modify line = {backtrack, quadratic, forcezero}
+  * LAMMPS min_style precon/lbfgs  x line = {precon_armijo (our default),
+                                              backtrack, quadratic, forcezero}
+
+`precon_armijo` is the plugin's default linemin (c1=0.1, quadratic-interp
+backtrack, Nocedal-Wright initial-alpha heuristic — see
+cpp/src/min_precon_lbfgs.cpp). The other three are LAMMPS's stock linemins,
+selected by `min_modify line ...` + `min_modify precon_armijo off`.
 
 Each at three step caps: 0.04 (ASE default), 0.10 (LAMMPS default), and 1.00
 (effectively "off" — ASE rejects maxstep > 1.0 and 1.0 Å/atom is well past any
@@ -58,25 +64,30 @@ def ase_run(structure, use_armijo: bool, maxstep: float) -> tuple[int, bool]:
     return sum(len(v) for v in lc.fmax.values()), converged
 
 
-def lammps_run(structure, line_style: str, dmax: float) -> tuple[int, bool]:
+def lammps_run(structure, line_style: str | None, dmax: float,
+                precon_armijo: bool | None = None) -> tuple[int, bool]:
     try:
         with tempfile.TemporaryDirectory() as tmp:
             res = run_lammps_cpp(
                 structure.atoms.copy(), structure.engine,
                 fmax=structure.fmax, maxiter=MAX_STEPS, maxeval=MAXEVAL,
-                workdir=Path(tmp), line_style=line_style, dmax=dmax)
+                workdir=Path(tmp), line_style=line_style, dmax=dmax,
+                precon_armijo=precon_armijo)
         return int(res["n_force"] or -1), bool(res["converged"])
     except Exception:
         return 0, False
 
 
-# (label, runner)
+# (label, runner). The LAMMPS rows that name a stock linemin must explicitly
+# disable our `precon_armijo` default, else init() would still install our
+# linemin and `min_modify line ...` would be a no-op.
 ROWS = [
     ("ASE     Armijo",      lambda s, c: ase_run(s, True,  c)),
     ("ASE     Wolfe",       lambda s, c: ase_run(s, False, c)),
-    ("LAMMPS  backtrack",   lambda s, c: lammps_run(s, "backtrack", c)),
-    ("LAMMPS  quadratic",   lambda s, c: lammps_run(s, "quadratic", c)),
-    ("LAMMPS  forcezero",   lambda s, c: lammps_run(s, "forcezero", c)),
+    ("LAMMPS  precon_armijo", lambda s, c: lammps_run(s, None, c)),
+    ("LAMMPS  backtrack",   lambda s, c: lammps_run(s, "backtrack", c, False)),
+    ("LAMMPS  quadratic",   lambda s, c: lammps_run(s, "quadratic", c, False)),
+    ("LAMMPS  forcezero",   lambda s, c: lammps_run(s, "forcezero", c, False)),
 ]
 
 

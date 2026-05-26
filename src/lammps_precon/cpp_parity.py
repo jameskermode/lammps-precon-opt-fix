@@ -78,6 +78,7 @@ def run_lammps_cpp(
     maxeval: int | None = None,
     line_style: str | None = None,
     dmax: float | None = None,
+    precon_armijo: bool | None = None,
 ) -> dict:
     """Run a LAMMPS relaxation via the C++ plugin.
 
@@ -88,6 +89,9 @@ def run_lammps_cpp(
     fmax)`` pairs, one per force evaluation. ``maxeval`` caps the force
     evaluations (default: a large value). ``line_style`` / ``dmax`` issue the
     corresponding ``min_modify`` commands (LAMMPS defaults otherwise).
+    ``precon_armijo`` toggles our custom linemin: ``True`` keeps it (already
+    the plugin default), ``False`` issues ``min_modify precon_armijo off`` so
+    ``line_style`` actually selects a stock LAMMPS linemin.
     """
     from lammps import lammps
 
@@ -122,6 +126,8 @@ def run_lammps_cpp(
         "min_modify norm max",
         *([f"min_modify line {line_style}"] if line_style else []),
         *([f"min_modify dmax {dmax}"] if dmax is not None else []),
+        *([f"min_modify precon_armijo {'on' if precon_armijo else 'off'}"]
+          if precon_armijo is not None else []),
         f"minimize 0.0 {fmax} {maxiter} "
         f"{maxeval if maxeval else max(400, 200 * maxiter)}",
     ]
