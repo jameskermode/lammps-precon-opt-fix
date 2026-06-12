@@ -460,6 +460,28 @@ int MinPreconLBFGS::iterate(int maxiter) {
     }
     for (int k = 0; k < nvec; ++k) h[k] = -z[k];
 
+    // PATCH 2026-06-12 (cracked-tip continuation work): zero the search
+    // direction on atoms whose forces are identically (0,0,0). These atoms
+    // are pinned by something like `fix freeze fixed setforce 0 0 0`, but
+    // the Exp preconditioner couples them spatially to their free
+    // neighbours — so even with zero forces the preconditioned direction
+    // h can be non-zero, and the line search then DRIFTS pinned atoms.
+    // (Discovered while debugging LACT continuation: rim atoms drifted by
+    // ~0.01-0.12 Å per `minimize` call despite fix freeze, contaminating
+    // Y_s with non-zero rim components.)
+    //
+    // Detection: atoms with fvec[3i] == fvec[3i+1] == fvec[3i+2] == 0
+    // (exact zeros come from setforce's post_force). This is robust
+    // because true equilibrium atoms have tiny but non-zero forces; only
+    // setforce-constrained atoms have exact zeros.
+    for (int i = 0; i < atom->nlocal; ++i) {
+      if (fvec[3*i] == 0.0 && fvec[3*i+1] == 0.0 && fvec[3*i+2] == 0.0) {
+        h[3*i]     = 0.0;
+        h[3*i + 1] = 0.0;
+        h[3*i + 2] = 0.0;
+      }
+    }
+
     // --- cell search direction: separate LBFGS two-loop, H0 = 1/mu_c -----
     if (ne > 0) {
       const int mc = static_cast<int>(sc_hist_.size());
