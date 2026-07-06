@@ -55,6 +55,10 @@ void MinPreconLBFGS::init() {
     linemin = static_cast<int (MinLineSearch::*)(double, double &)>(
         &MinPreconLBFGS::linemin_armijo);
   }
+  if (use_fixed_step_) {
+    linemin = static_cast<int (MinLineSearch::*)(double, double &)>(
+        &MinPreconLBFGS::linemin_fixed);
+  }
   precon_ready_ = false;
   has_prev_ = false;
   has_eoriginal_prev_ = false;
@@ -78,6 +82,10 @@ int MinPreconLBFGS::modify_param(int narg, char **arg) {
     use_armijo_ = utils::logical(FLERR, arg[1], false, lmp);
     // The linemin pointer is reassigned on the next init(); no need to touch
     // it here, since init() runs at the start of every `minimize` command.
+    return 2;
+  }
+  if (narg >= 2 && strcmp(arg[0], "precon_fixed_step") == 0) {
+    use_fixed_step_ = utils::logical(FLERR, arg[1], false, lmp);
     return 2;
   }
   return 0;
@@ -222,6 +230,81 @@ int MinPreconLBFGS::linemin_armijo(double eoriginal, double &alpha) {
       return ZEROALPHA;
     }
   }
+}
+
+/* ----------------------------------------------------------------------
+   linemin_fixed: NO line search — accept the preconditioned LBFGS step at
+   alpha = min(1, dmax/|h|_inf) (plus the extra-DOF clamps). Rationale: an
+   energy-difference acceptance test saturates at fmax ~ sqrt(ulp(|E_total|)),
+   which for large-E0 MLIPs on 1e5+ atoms is ~1e-3..1e-4 eV/A — far above a
+   1e-6 ftol. With a well-scaled Exp preconditioner the unit step is
+   Newton-like near the minimum, so the test is unnecessary there; dmax
+   remains the only (geometric) safeguard. Descent/zero-force bookkeeping
+   mirrors linemin_armijo so box/relax composition still works.
+------------------------------------------------------------------------- */
+
+int MinPreconLBFGS::linemin_fixed(double eoriginal, double &alpha) {
+  int i, m, n;
+  double fdothall, fdothme, hme, hmax, hmaxall;
+  double *xatom, *x0atom, *fatom, *hatom;
+
+  // descent check (identical to linemin_armijo)
+  fdothme = 0.0;
+  for (i = 0; i < nvec; i++) fdothme += fvec[i] * h[i];
+  if (nextra_atom)
+    for (m = 0; m < nextra_atom; m++) {
+      fatom = fextra_atom[m];
+      hatom = hextra_atom[m];
+      n = extra_nlen[m];
+      for (i = 0; i < n; i++) fdothme += fatom[i] * hatom[i];
+    }
+  MPI_Allreduce(&fdothme, &fdothall, 1, MPI_DOUBLE, MPI_SUM, world);
+  if (nextra_global)
+    for (i = 0; i < nextra_global; i++) fdothall += fextra[i] * hextra[i];
+  if (output->thermo->normflag) fdothall /= atom->natoms;
+  if (fdothall <= 0.0) return DOWNHILL;
+
+  // alpha = min(1, dmax/|h|_inf) with the same extra-DOF clamps
+  hme = 0.0;
+  for (i = 0; i < nvec; i++) hme = std::max(hme, std::fabs(h[i]));
+  MPI_Allreduce(&hme, &hmaxall, 1, MPI_DOUBLE, MPI_MAX, world);
+  alpha = std::min(1.0, dmax / hmaxall);
+  if (nextra_atom)
+    for (m = 0; m < nextra_atom; m++) {
+      hatom = hextra_atom[m];
+      n = extra_nlen[m];
+      hme = 0.0;
+      for (i = 0; i < n; i++) hme = std::max(hme, std::fabs(hatom[i]));
+      MPI_Allreduce(&hme, &hmax, 1, MPI_DOUBLE, MPI_MAX, world);
+      alpha = std::min(alpha, extra_max[m] / hmax);
+      hmaxall = std::max(hmaxall, hmax);
+    }
+  if (nextra_global) {
+    double alpha_extra = modify->max_alpha(hextra);
+    alpha = std::min(alpha, alpha_extra);
+    for (i = 0; i < nextra_global; i++)
+      hmaxall = std::max(hmaxall, std::fabs(hextra[i]));
+  }
+  if (hmaxall == 0.0) return ZEROFORCE;
+
+  fix_minimize->store_box();
+  for (i = 0; i < nvec; i++) x0[i] = xvec[i];
+  if (nextra_atom)
+    for (m = 0; m < nextra_atom; m++) {
+      xatom = xextra_atom[m];
+      x0atom = x0extra_atom[m];
+      n = extra_nlen[m];
+      for (i = 0; i < n; i++) x0atom[i] = xatom[i];
+    }
+  if (nextra_global) modify->min_store();
+
+  // take the step unconditionally
+  ecurrent = alpha_step(alpha, 1);
+  if (nextra_global) {
+    int itmp = modify->min_reset_ref();
+    if (itmp) ecurrent = energy_force(1);
+  }
+  return 0;
 }
 
 double MinPreconLBFGS::ddot(const double *a, const double *b, int n) const {
