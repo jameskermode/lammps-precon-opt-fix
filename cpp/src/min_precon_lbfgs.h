@@ -50,6 +50,15 @@ class MinPreconLBFGS : public MinLineSearch {
   // forcezero}`). See min_precon_lbfgs.cpp for the algorithm.
   int linemin_armijo(double eoriginal, double &alpha);
   bool use_armijo_ = true;
+  // Fixed-step mode (`min_modify precon_fixed_step on`): take the
+  // preconditioned LBFGS step at alpha = min(1, dmax/|h|_inf) with NO
+  // accept/reject test. Near the minimum the P-scaled step is Newton-like, and
+  // an energy-difference test cannot resolve the decrease once
+  // fmax ~ sqrt(ulp(|E_total|)) — for large-E0 MLIPs (ACE) on 1e5+ atoms that
+  // floor sits at ~1e-3 eV/A, far above typical ftol. Takes precedence over
+  // both Armijo and the base linemin styles.
+  int linemin_fixed(double eoriginal, double &alpha);
+  bool use_fixed_step_ = false;
   // Initial-alpha heuristic state (Nocedal & Wright Eq. 3.60). After a
   // successful line search, remember the energy at the start of *that*
   // search so the next call can predict a good starting alpha from the

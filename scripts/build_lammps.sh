@@ -128,7 +128,7 @@ fi
 
 echo ""
 echo "=== Downloading sources ==="
-if [[ ! -f "$LAMMPS_DIR/CMakeLists.txt" ]]; then
+if [[ ! -f "$LAMMPS_DIR/cmake/CMakeLists.txt" ]]; then
     echo "Cloning LAMMPS (release branch)..."
     git clone -b release https://github.com/lammps/lammps "$LAMMPS_DIR"
 else
@@ -158,6 +158,9 @@ CMAKE_FLAGS=(
     -D BUILD_OMP=ON
     -D BUILD_MPI=ON
     -D PKG_MANYBODY=ON
+    -D PKG_ML-PACE=ON
+    # wcwitt fork of lammps-user-pace: required to read ACEpotentials.jl-exported .yace
+    -D "LOCAL_ML-PACE=$BASE_DIR/lammps-user-pace-wcwitt"
     -D PKG_KOKKOS=ON
     -D PKG_PYTHON=ON
     -D PKG_PLUGIN=ON
