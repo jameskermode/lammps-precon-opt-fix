@@ -69,7 +69,10 @@ class MinPreconLBFGS : public MinLineSearch {
 
   class FixPreconExp *fix_ = nullptr;
   bool precon_ready_ = false;
-  int memory_ = 100;           // LBFGS history length
+  // LBFGS history length. Settable via `min_modify precon_history <m>`: each
+  // history pair costs 2 x 3N doubles (~1.8 GB/pair at 38M atoms), so large
+  // systems on small-memory nodes should use m ~ 5-10.
+  int memory_ = 100;
   bigint last_ncalls_ = -1;    // neighbour-build counter (history-reset signal)
 
   // atomic-DOF LBFGS history (length nvec, per rank)
