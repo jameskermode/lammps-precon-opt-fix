@@ -16,10 +16,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Module versions (foss/2023b uses GCC 13.2.0, which CUDA 12.9.1 supports;
-# GCC 13.3.0 from foss/2024a has AMX header issues with nvcc)
-FOSS_MODULE="foss/2023b"
-CMAKE_MODULE="CMake/3.27.6"
-CUDA_MODULE="CUDA/12.9.1"
+# GCC 13.3.0 from foss/2024a has AMX header issues with nvcc).
+# Overridable from the environment for other HPC sites, e.g.:
+#   FOSS_MODULE=foss/2023a CMAKE_MODULE=CMake/3.26.3 bash scripts/build_lammps.sh
+FOSS_MODULE="${FOSS_MODULE:-foss/2023b}"
+CMAKE_MODULE="${CMAKE_MODULE:-CMake/3.27.6}"
+CUDA_MODULE="${CUDA_MODULE:-CUDA/12.9.1}"
 
 # ── Toolchain (HPC / Lmod — local setup) ─────────────────────────────────────
 # This convenience script targets an HPC environment with the Lmod module
@@ -135,6 +137,16 @@ else
     echo "LAMMPS directory already exists, skipping clone."
 fi
 
+# wcwitt fork of lammps-user-pace: required for ML-PACE to read
+# ACEpotentials.jl/ACE1.jl-exported .yace files (LOCAL_ML-PACE below).
+PACE_DIR="$BASE_DIR/lammps-user-pace-wcwitt"
+if [[ ! -f "$PACE_DIR/CMakeLists.txt" ]]; then
+    echo "Cloning lammps-user-pace (wcwitt fork)..."
+    git clone --depth 1 https://github.com/wcwitt/lammps-user-pace "$PACE_DIR"
+else
+    echo "lammps-user-pace (wcwitt) already present, skipping clone."
+fi
+
 # ── Patch LAMMPS with symmetrix ──────────────────────────────────────────────
 echo ""
 echo "=== Patching LAMMPS with symmetrix ==="
@@ -160,7 +172,7 @@ CMAKE_FLAGS=(
     -D PKG_MANYBODY=ON
     -D PKG_ML-PACE=ON
     # wcwitt fork of lammps-user-pace: required to read ACEpotentials.jl-exported .yace
-    -D "LOCAL_ML-PACE=$BASE_DIR/lammps-user-pace-wcwitt"
+    -D "LOCAL_ML-PACE=$PACE_DIR"
     -D PKG_KOKKOS=ON
     -D PKG_PYTHON=ON
     -D PKG_PLUGIN=ON
