@@ -70,8 +70,13 @@ class MinPreconLBFGS : public MinLineSearch {
   class FixPreconExp *fix_ = nullptr;
   bool precon_ready_ = false;
   // LBFGS history length. Settable via `min_modify precon_history <m>`: each
-  // history pair costs 2 x 3N doubles (~1.8 GB/pair at 38M atoms), so large
-  // systems on small-memory nodes should use m ~ 5-10.
+  // history pair costs 2 x 3N doubles (~1.8 GB/pair at 38M atoms). CAUTION:
+  // small m degrades the fixed-step tail on large systems — at 2.3M atoms
+  // (W loop, ACE) m=5 slowed convergence to a near-stall around fmax ~ 2.5e-4
+  // while m=100 reached 1e-6 in 230 iterations. Reduce m only as far as memory
+  // requires (m ~ 50 validated-adjacent; m <= 10 unproven at multi-M atoms).
+  // Also keep the fix's default r_cut = 2*r_NN: cutting it (e.g. to 4.0 A in W)
+  // degrades P's soft modes and makes the fixed-step tail diverge.
   int memory_ = 100;
   bigint last_ncalls_ = -1;    // neighbour-build counter (history-reset signal)
 
