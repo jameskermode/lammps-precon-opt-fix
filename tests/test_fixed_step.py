@@ -142,6 +142,17 @@ def test_hybrid_energy_matches_pure_armijo(hybrid_relax, armijo_relax):
         f"(total {de:.3e} eV) — the fixed step converged elsewhere")
 
 
+def test_precon_history_accepted_and_converges(cu_datafile):
+    """``min_modify precon_history <m>`` parses and a short-memory LBFGS still
+    converges (large systems need m ~ 5 to bound the 2 x m x 3N history)."""
+    datafile, species = cu_datafile
+    lmp = _new_lammps(datafile, species)
+    lmp.commands_string("min_modify precon_history 5")
+    lmp.commands_string(f"minimize 0.0 {FTOL_STAGE1} 200 2000")
+    assert _fmax(lmp) <= FTOL_STAGE1
+    lmp.close()
+
+
 def test_off_switch_restores_armijo(cu_datafile):
     """``precon_fixed_step off`` after ``on`` restores Armijo behaviour."""
     datafile, species = cu_datafile

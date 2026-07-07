@@ -88,6 +88,12 @@ int MinPreconLBFGS::modify_param(int narg, char **arg) {
     use_fixed_step_ = utils::logical(FLERR, arg[1], false, lmp);
     return 2;
   }
+  if (narg >= 2 && strcmp(arg[0], "precon_history") == 0) {
+    memory_ = utils::inumeric(FLERR, arg[1], false, lmp);
+    if (memory_ < 1)
+      error->all(FLERR, "min_modify precon_history must be >= 1");
+    return 2;
+  }
   return 0;
 }
 
